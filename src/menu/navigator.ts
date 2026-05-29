@@ -1,8 +1,7 @@
 import type { MenuItem, Config } from "../loader/schema.js";
 import { flattenNodes, resolveDeps, getLeafIds } from "../utils/deps.js";
-import { isLeaf, getBreadcrumb } from "./tree.js";
+import { isLeaf } from "./tree.js";
 import { renderMenu } from "./render.js";
-import { c } from "../utils/colors.js";
 
 export interface NavResult {
   selectedIds: Set<string>;

@@ -57,7 +57,7 @@ async function run(opts: { config: string; output?: string; dryRun?: boolean }) 
   const script = assemble({
     config,
     configPath: opts.config,
-    selectedIds: resolved,
+    selectedIds,
   });
 
   // Validate

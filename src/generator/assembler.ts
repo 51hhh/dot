@@ -1,8 +1,7 @@
-import fs from "node:fs";
 import path from "node:path";
-import type { MenuItem, Config } from "../loader/schema.js";
+import type { Config } from "../loader/schema.js";
 import { flattenNodes, topoSort } from "../utils/deps.js";
-import { loadTemplate, renderTemplate } from "./template.js";
+import { loadTemplate } from "./template.js";
 
 export interface AssembleOptions {
   config: Config;
