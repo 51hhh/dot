@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadConfig } from "./loader/loader.js";
 import { banner, c } from "./utils/colors.js";
 import { navigate } from "./menu/navigator.js";
-import { flattenNodes, resolveDeps } from "./utils/deps.js";
+import { flattenNodes } from "./utils/deps.js";
 import { assemble } from "./generator/assembler.js";
 import { validateScript } from "./generator/validator.js";
 
@@ -46,12 +46,11 @@ async function run(opts: { config: string; output?: string; dryRun?: boolean }) 
 
   // Show selected items
   const allNodes = flattenNodes(config.menu);
-  const resolved = resolveDeps(selectedIds, allNodes);
   console.log(`\n  ${c.title("已选配置:")}`);
-  for (const id of resolved) {
+  for (const id of selectedIds) {
     const node = allNodes.get(id)!;
-    const marker = selectedIds.has(id) ? c.selected(" ✓") : c.dep(" (auto)");
-    console.log(`    ${node.label}${marker}`);
+    if (!node.script) continue; // skip branch nodes in display
+    console.log(`    ${c.selected(" ✓")} ${node.label}`);
   }
 
   // Assemble script

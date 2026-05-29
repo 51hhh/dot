@@ -25,14 +25,10 @@ export async function navigate(config: Config): Promise<NavResult> {
     const breadcrumb = path.map((p) => p.label);
 
     // Compute auto-deps for display
-    const autoDeps = resolveDeps(selected, allNodes);
-    for (const id of autoDeps) {
-      if (!selected.has(id)) {
-        // these are auto-resolved deps
-      }
-    }
+    const resolved = resolveDeps(selected, allNodes);
+    const autoDeps = new Set([...resolved].filter((id) => !selected.has(id)));
 
-    const result = await renderMenu(current.nodes, { selected, autoDeps: new Set() }, breadcrumb);
+    const result = await renderMenu(current.nodes, { selected, autoDeps }, breadcrumb);
 
     if (result.action === "quit") {
       return { selectedIds: selected, quit: true };
@@ -70,15 +66,15 @@ export async function navigate(config: Config): Promise<NavResult> {
             selected.add(id);
           }
         } else {
-          // For branch nodes, select all leaves under it
+          // For branch nodes, select all leaves + the branch itself (for deps)
           const leafIds = getLeafIds(node);
-          const allSelected = leafIds.every((lid) => selected.has(lid));
-          for (const lid of leafIds) {
-            if (allSelected) {
-              selected.delete(lid);
-            } else {
-              selected.add(lid);
-            }
+          const allSelected = leafIds.every((lid) => selected.has(lid)) && selected.has(id);
+          if (allSelected) {
+            selected.delete(id);
+            for (const lid of leafIds) selected.delete(lid);
+          } else {
+            selected.add(id);
+            for (const lid of leafIds) selected.add(lid);
           }
         }
       }

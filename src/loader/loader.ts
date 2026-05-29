@@ -23,9 +23,3 @@ export function loadConfig(configPath: string): Config {
 
   return ConfigSchema.parse(data);
 }
-
-export function resolveTemplatePath(templatePath: string, configPath: string): string {
-  if (path.isAbsolute(templatePath)) return templatePath;
-  const configDir = path.dirname(path.resolve(configPath));
-  return path.resolve(configDir, templatePath);
-}
