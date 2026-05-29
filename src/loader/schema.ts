@@ -9,6 +9,7 @@ export const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
     vars: z.record(z.string()).optional(),
     deps: z.array(z.string()).optional(),
     children: z.array(MenuItemSchema).optional(),
+    post: z.boolean().optional(),
   })
 );
 
@@ -34,6 +35,8 @@ export interface MenuItem {
   vars?: Record<string, string>;
   deps?: string[];
   children?: MenuItem[];
+  /** If true, this node runs after all non-post nodes regardless of topo order */
+  post?: boolean;
 }
 
 export type Config = z.infer<typeof ConfigSchema>;

@@ -21,6 +21,10 @@ export function assemble(opts: AssembleOptions): string {
   // Topological sort for correct dependency order
   const sortedIds = topoSort(selectedIds, allNodes);
 
+  // Split into normal and post nodes
+  const normalIds = sortedIds.filter((id) => !allNodes.get(id)?.post);
+  const postIds = sortedIds.filter((id) => allNodes.get(id)?.post);
+
   const sections: string[] = [];
 
   // Header
@@ -35,8 +39,25 @@ export function assemble(opts: AssembleOptions): string {
     sections.push("");
   }
 
-  // Each selected script
-  for (const id of sortedIds) {
+  // Normal scripts first
+  for (const id of normalIds) {
+    const node = allNodes.get(id)!;
+    if (!node.script) continue;
+
+    const scriptPath = path.isAbsolute(node.script)
+      ? node.script
+      : path.resolve(configDir, node.script);
+
+    const mergedVars = { ...config.vars, ...node.vars };
+    const scriptContent = loadTemplate(scriptPath, mergedVars);
+
+    sections.push(`# ─── ${node.label} (${node.id}) ───`);
+    sections.push(scriptContent);
+    sections.push("");
+  }
+
+  // Post scripts last (e.g., TPM init)
+  for (const id of postIds) {
     const node = allNodes.get(id)!;
     if (!node.script) continue;
 
