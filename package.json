@@ -1,0 +1,26 @@
+{
+  "name": "dot",
+  "version": "1.0.0",
+  "description": "Interactive system configuration generator - forge your dotfiles",
+  "type": "module",
+  "bin": {
+    "dot": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "js-yaml": "^4.1.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^20.14.0",
+    "tsup": "^8.1.0",
+    "typescript": "^5.5.0"
+  }
+}
