@@ -1,0 +1,51 @@
+name: "Linux 开发环境一键配置"
+version: "1.0"
+description: "交互式配置 zsh、tmux、输入法等开发工具"
+
+output:
+  filename: "setup.sh"
+  dir: "dist"
+
+vars:
+  user_shell: "/bin/bash"
+
+menu:
+  - id: "shell"
+    label: "Shell 环境"
+    children:
+      - id: "zsh"
+        label: "安装并配置 Zsh"
+        description: "安装 zsh + oh-my-zsh + 插件"
+        script: "templates/example/zsh.sh"
+        vars:
+          theme: "robbyrussell"
+          plugins: "git docker"
+      - id: "bash-config"
+        label: "优化 Bash 配置"
+        description: "添加常用 alias 和环境变量"
+        script: "templates/example/bash.sh"
+
+  - id: "terminal"
+    label: "终端工具"
+    children:
+      - id: "tmux"
+        label: "安装并配置 Tmux"
+        description: "安装 tmux + 自定义配置"
+        script: "templates/example/tmux.sh"
+        deps: ["zsh"]
+      - id: "input-method"
+        label: "安装输入法"
+        description: "安装 fcitx5 + 拼音输入法"
+        script: "templates/example/fcitx.sh"
+
+  - id: "dev-tools"
+    label: "开发工具"
+    children:
+      - id: "git-config"
+        label: "配置 Git"
+        description: "设置全局 git 配置和常用 alias"
+        script: "templates/example/git.sh"
+      - id: "docker"
+        label: "安装 Docker"
+        description: "安装 Docker CE + Docker Compose"
+        script: "templates/example/docker.sh"
