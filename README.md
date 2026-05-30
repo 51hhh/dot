@@ -40,7 +40,7 @@ menu:
       - id: "tool-a"
         label: "安装工具 A"
         description: "工具 A 的说明"
-        script: "templates/tool-a.sh"
+        script: "templates/tool-a.sh"  # 相对于配置文件所在目录
         deps: ["tool-b"]
         vars:
           version: "1.0"
@@ -56,17 +56,20 @@ menu:
 | `id` | 是 | 唯一标识 |
 | `label` | 是 | 菜单显示文本 |
 | `description` | 否 | 菜单项描述 |
-| `script` | 否 | 模板脚本路径（叶子节点） |
+| `script` | 否 | 模板脚本路径，相对于配置文件所在目录（叶子节点） |
 | `deps` | 否 | 依赖项 id 列表 |
 | `vars` | 否 | 模板变量，覆盖全局变量 |
 | `children` | 否 | 子菜单（支持任意嵌套） |
+| `post` | 否 | 设为 `true` 时，此节点会在所有非 post 节点之后执行（如 TPM init） |
 
 ## CLI 参数
 
 ```
 dot --config <path>       # 配置文件路径 (YAML/JSON)
     --output <path>       # 输出脚本路径（覆盖配置中的 output）
+    --select <ids...>     # 预选菜单项 id（跳过交互式菜单）
     --dry-run             # 打印到 stdout，不写文件
+    --quiet               # 抑制 banner 和选择输出（适合脚本调用）
 ```
 
 ## 模板语法

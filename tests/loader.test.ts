@@ -47,4 +47,72 @@ describe("loadConfig", () => {
     expect(() => loadConfig(p)).toThrow();
     fs.rmSync(dir, { recursive: true });
   });
+
+  it("throws on duplicate ids", () => {
+    const dir = tmpDir();
+    const p = path.join(dir, "config.yaml");
+    fs.writeFileSync(p, yaml.dump({
+      name: "test",
+      menu: [
+        { id: "a", label: "A" },
+        { id: "a", label: "A2" },
+      ],
+    }));
+    expect(() => loadConfig(p)).toThrow(/Duplicate/);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("throws on nested duplicate ids", () => {
+    const dir = tmpDir();
+    const p = path.join(dir, "config.yaml");
+    fs.writeFileSync(p, yaml.dump({
+      name: "test",
+      menu: [
+        { id: "parent", label: "P", children: [{ id: "a", label: "A1" }] },
+        { id: "a", label: "A2" },
+      ],
+    }));
+    expect(() => loadConfig(p)).toThrow(/Duplicate/);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("throws on unknown dep", () => {
+    const dir = tmpDir();
+    const p = path.join(dir, "config.yaml");
+    fs.writeFileSync(p, yaml.dump({
+      name: "test",
+      menu: [{ id: "a", label: "A", deps: ["nonexistent"] }],
+    }));
+    expect(() => loadConfig(p)).toThrow(/unknown item/);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("throws when non-post depends on post item", () => {
+    const dir = tmpDir();
+    const p = path.join(dir, "config.yaml");
+    fs.writeFileSync(p, yaml.dump({
+      name: "test",
+      menu: [
+        { id: "a", label: "A", deps: ["b"] },
+        { id: "b", label: "B", post: true },
+      ],
+    }));
+    expect(() => loadConfig(p)).toThrow(/post/);
+    fs.rmSync(dir, { recursive: true });
+  });
+
+  it("allows post depending on non-post", () => {
+    const dir = tmpDir();
+    const p = path.join(dir, "config.yaml");
+    fs.writeFileSync(p, yaml.dump({
+      name: "test",
+      menu: [
+        { id: "a", label: "A" },
+        { id: "b", label: "B", post: true, deps: ["a"] },
+      ],
+    }));
+    const config = loadConfig(p);
+    expect(config.menu).toHaveLength(2);
+    fs.rmSync(dir, { recursive: true });
+  });
 });

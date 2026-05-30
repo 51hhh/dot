@@ -135,4 +135,22 @@ describe("assemble", () => {
 
     fs.rmSync(dir, { recursive: true });
   });
+
+  it("escapes special chars in global vars", () => {
+    const dir = tmpDir();
+    writeTmpFile(dir, "t.sh", 'echo "{{x}}"');
+
+    const config: Config = {
+      name: "T",
+      version: "1.0",
+      vars: { x: 'he said "hi" and $HOME' },
+      output: { filename: "o.sh", dir },
+      menu: [{ id: "a", label: "A", script: path.join(dir, "t.sh") }],
+    };
+
+    const result = assemble({ config, configPath: path.join(dir, "c.yaml"), selectedIds: new Set(["a"]) });
+    expect(result).toContain('x="he said \\"hi\\" and \\$HOME"');
+
+    fs.rmSync(dir, { recursive: true });
+  });
 });

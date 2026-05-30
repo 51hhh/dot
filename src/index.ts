@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadConfig } from "./loader/loader.js";
 import { banner, c } from "./utils/colors.js";
 import { navigate } from "./menu/navigator.js";
-import { flattenNodes } from "./utils/deps.js";
+import { flattenNodes, resolveDeps } from "./utils/deps.js";
 import { assemble } from "./generator/assembler.js";
 import { validateScript } from "./generator/validator.js";
 
@@ -16,7 +16,9 @@ program
   .version("1.0.0")
   .requiredOption("-c, --config <path>", "Path to config file (YAML/JSON)")
   .option("-o, --output <path>", "Output script path (overrides config)")
+  .option("-s, --select <ids...>", "Pre-select menu item ids (skip interactive menu)")
   .option("--dry-run", "Print generated script to stdout without writing")
+  .option("--quiet", "Suppress banner and selection output")
   .action(async (opts) => {
     try {
       await run(opts);
@@ -26,31 +28,55 @@ program
     }
   });
 
-async function run(opts: { config: string; output?: string; dryRun?: boolean }) {
+async function run(opts: {
+  config: string;
+  output?: string;
+  dryRun?: boolean;
+  select?: string[];
+  quiet?: boolean;
+}) {
   // Load config
   const config = loadConfig(opts.config);
-  console.log(banner(config.name, config.version, config.description));
 
-  // Run interactive navigator
-  const { selectedIds, quit } = await navigate(config);
+  if (!opts.quiet) {
+    console.log(banner(config.name, config.version, config.description));
+  }
 
-  if (quit) {
-    console.log(c.dim("\n  已退出\n"));
-    process.exit(0);
+  let selectedIds: Set<string>;
+
+  if (opts.select) {
+    // Non-interactive mode: use pre-selected ids
+    const allNodes = flattenNodes(config.menu);
+    for (const id of opts.select) {
+      if (!allNodes.has(id)) {
+        throw new Error(`Unknown menu item id: "${id}"`);
+      }
+    }
+    selectedIds = resolveDeps(new Set(opts.select), allNodes);
+  } else {
+    // Interactive mode: run navigator
+    const result = await navigate(config);
+    if (result.quit) {
+      if (!opts.quiet) console.log(c.dim("\n  已退出\n"));
+      process.exit(0);
+    }
+    selectedIds = result.selectedIds;
   }
 
   if (selectedIds.size === 0) {
-    console.log(c.warn("\n  未选择任何配置项\n"));
+    if (!opts.quiet) console.log(c.warn("\n  未选择任何配置项\n"));
     process.exit(0);
   }
 
   // Show selected items
-  const allNodes = flattenNodes(config.menu);
-  console.log(`\n  ${c.title("已选配置:")}`);
-  for (const id of selectedIds) {
-    const node = allNodes.get(id)!;
-    if (!node.script) continue; // skip branch nodes in display
-    console.log(`    ${c.selected(" ✓")} ${node.label}`);
+  if (!opts.quiet) {
+    const allNodes = flattenNodes(config.menu);
+    console.log(`\n  ${c.title("已选配置:")}`);
+    for (const id of selectedIds) {
+      const node = allNodes.get(id)!;
+      if (!node.script) continue;
+      console.log(`    ${c.selected(" ✓")} ${node.label}`);
+    }
   }
 
   // Assemble script
@@ -62,14 +88,18 @@ async function run(opts: { config: string; output?: string; dryRun?: boolean }) 
 
   // Validate
   const validationError = validateScript(script);
-  if (validationError) {
+  if (validationError && !opts.quiet) {
     console.log(c.warn(`\n  ⚠ 脚本语法警告: ${validationError}`));
   }
 
   if (opts.dryRun) {
-    console.log(`\n${c.dim("─".repeat(50))}`);
-    console.log(script);
-    console.log(c.dim("─".repeat(50)));
+    if (opts.quiet) {
+      process.stdout.write(script);
+    } else {
+      console.log(`\n${c.dim("─".repeat(50))}`);
+      console.log(script);
+      console.log(c.dim("─".repeat(50)));
+    }
     return;
   }
 
@@ -82,8 +112,10 @@ async function run(opts: { config: string; output?: string; dryRun?: boolean }) 
   fs.mkdirSync(path.dirname(resolvedOutput), { recursive: true });
   fs.writeFileSync(resolvedOutput, script, { mode: 0o755 });
 
-  console.log(c.success(`\n  ✓ 脚本已生成: ${resolvedOutput}`));
-  console.log(c.dim(`  运行: bash ${resolvedOutput}\n`));
+  if (!opts.quiet) {
+    console.log(c.success(`\n  ✓ 脚本已生成: ${resolvedOutput}`));
+    console.log(c.dim(`  运行: bash ${resolvedOutput}\n`));
+  }
 }
 
 program.parse();

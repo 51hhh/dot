@@ -33,15 +33,15 @@ export function assemble(opts: AssembleOptions): string {
   if (config.vars && Object.keys(config.vars).length > 0) {
     sections.push("# Global variables");
     for (const [key, val] of Object.entries(config.vars)) {
-      sections.push(`${key}="${val}"`);
+      sections.push(`${key}=${shellQuote(val)}`);
     }
     sections.push("");
   }
 
-  // Normal scripts first
-  for (const id of normalIds) {
+  // Render script sections
+  const renderSection = (id: string) => {
     const node = allNodes.get(id)!;
-    if (!node.script) continue;
+    if (!node.script) return;
 
     const scriptPath = path.isAbsolute(node.script)
       ? node.script
@@ -53,29 +53,25 @@ export function assemble(opts: AssembleOptions): string {
     sections.push(`# ─── ${node.label} (${node.id}) ───`);
     sections.push(scriptContent);
     sections.push("");
-  }
+  };
 
-  // Post scripts last (e.g., TPM init)
-  for (const id of postIds) {
-    const node = allNodes.get(id)!;
-    if (!node.script) continue;
-
-    const scriptPath = path.isAbsolute(node.script)
-      ? node.script
-      : path.resolve(configDir, node.script);
-
-    const mergedVars = { ...config.vars, ...node.vars };
-    const scriptContent = loadTemplate(scriptPath, mergedVars);
-
-    sections.push(`# ─── ${node.label} (${node.id}) ───`);
-    sections.push(scriptContent);
-    sections.push("");
-  }
+  normalIds.forEach(renderSection);
+  postIds.forEach(renderSection);
 
   // Footer
   sections.push(generateFooter(config));
 
   return sections.join("\n");
+}
+
+/** Escape special chars for use inside bash double quotes */
+function shellEscapeChars(val: string): string {
+  return val.replace(/["$`\\]/g, "\\$&");
+}
+
+/** Escape and wrap in double quotes for shell assignment */
+function shellQuote(val: string): string {
+  return `"${shellEscapeChars(val)}"`;
 }
 
 function generateHeader(config: Config): string {
@@ -115,7 +111,7 @@ check_root() {
 function generateFooter(config: Config): string {
   return `
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-log_ok "${config.name} 配置完成!"
+log_ok "${shellEscapeChars(config.name)} 配置完成!"
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
 }

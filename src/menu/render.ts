@@ -92,9 +92,9 @@ export async function renderMenu(
 
   // If single selection and has children, enter submenu
   if (ids.length === 1) {
-    const node = nodes.find((n) => n.id === ids[0])!;
-    if (!isLeaf(node)) {
-      return { action: "enter", childIndex: nodes.indexOf(node) };
+    const idx = nodes.findIndex((n) => n.id === ids[0]);
+    if (idx >= 0 && !isLeaf(nodes[idx])) {
+      return { action: "enter", childIndex: idx };
     }
   }
 

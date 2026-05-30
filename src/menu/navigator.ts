@@ -3,6 +3,12 @@ import { flattenNodes, resolveDeps, getLeafIds } from "../utils/deps.js";
 import { isLeaf } from "./tree.js";
 import { renderMenu } from "./render.js";
 
+function computeAutoDeps(selected: Set<string>, allNodes: Map<string, MenuItem>): Set<string> {
+  if (selected.size === 0) return new Set();
+  const resolved = resolveDeps(selected, allNodes);
+  return new Set([...resolved].filter((id) => !selected.has(id)));
+}
+
 export interface NavResult {
   selectedIds: Set<string>;
   quit: boolean;
@@ -23,11 +29,10 @@ export async function navigate(config: Config): Promise<NavResult> {
     const current = path[path.length - 1];
     const breadcrumb = path.map((p) => p.label);
 
-    // Compute auto-deps for display
-    const resolved = resolveDeps(selected, allNodes);
-    const autoDeps = new Set([...resolved].filter((id) => !selected.has(id)));
-
-    const result = await renderMenu(current.nodes, { selected, autoDeps }, breadcrumb);
+    const result = await renderMenu(current.nodes, {
+      selected,
+      autoDeps: computeAutoDeps(selected, allNodes),
+    }, breadcrumb);
 
     if (result.action === "quit") {
       return { selectedIds: selected, quit: true };
@@ -43,9 +48,7 @@ export async function navigate(config: Config): Promise<NavResult> {
     }
 
     if (result.action === "confirm") {
-      // Resolve deps and return
-      const resolved = resolveDeps(selected, allNodes);
-      return { selectedIds: resolved, quit: false };
+      return { selectedIds: resolveDeps(selected, allNodes), quit: false };
     }
 
     if (result.action === "enter") {
