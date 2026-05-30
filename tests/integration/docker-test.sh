@@ -1,177 +1,175 @@
 #!/usr/bin/env bash
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  Docker 集成测试
-#  在干净的 Ubuntu 容器中运行生成的脚本，验证实际可用性
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  Docker 集成测试 - 参数化矩阵
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 set -euo pipefail
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-TEST_DIR=$(mktemp -d)
+GENERATE="$PROJECT_DIR/tests/integration/generate.mjs"
 PASS=0
 FAIL=0
 
-log_info()  { echo -e "${CYAN}[INFO]${NC}  $*"; }
-log_ok()    { echo -e "${GREEN}[PASS]${NC}  $*"; PASS=$((PASS + 1)); }
-log_fail()  { echo -e "${RED}[FAIL]${NC}  $*"; FAIL=$((FAIL + 1)); }
+log_ok()    { echo -e "  ${GREEN}✓${NC} $*"; PASS=$((PASS + 1)); }
+log_fail()  { echo -e "  ${RED}✗${NC} $*"; FAIL=$((FAIL + 1)); }
 log_header(){ echo -e "\n${CYAN}━━━ $* ━━━${NC}"; }
 
-cleanup() {
-  rm -rf "$TEST_DIR"
-  docker rm -f dot-test-tmux 2>/dev/null || true
-}
-trap cleanup EXIT
-
-# ── 检查 Docker ──
 if ! command -v docker &>/dev/null; then
   echo "Docker 未安装，跳过集成测试"
   exit 0
 fi
 
-# ── 生成 tmux 配置脚本（直接调用模块 API，跳过交互式 CLI）──
-log_header "生成 tmux 配置脚本"
+CONTAINER=""
 
-cd "$PROJECT_DIR"
-mkdir -p tests/integration/tmp
-node --input-type=module << 'GENEOF'
-import fs from "node:fs";
-import path from "node:path";
-import yaml from "js-yaml";
+cleanup() { docker rm -f "$CONTAINER" 2>/dev/null || true; }
+trap cleanup EXIT
 
-const config = yaml.load(fs.readFileSync("configs/tmux.yaml", "utf-8"));
-const allNodes = new Map();
-function walk(nodes) { for (const n of nodes) { allNodes.set(n.id, n); if (n.children) walk(n.children); } }
-walk(config.menu);
+# ── 启动容器、生成脚本、执行 ──
+setup_and_run() {
+  local name="$1"; shift
+  log_header "$name"
 
-const selected = new Set([
-  "tmux-install-apt", "tmux-header", "tmux-prefix-ctrl-a",
-  "tmux-tpm", "tmux-plugin-resurrect", "tmux-tpm-finalize",
-  "tmux-status-minimal", "tmux-opt-mouse", "tmux-opt-index",
-]);
+  CONTAINER="dot-test-$$-$RANDOM"
+  docker rm -f "$CONTAINER" 2>/dev/null || true
 
-function resolveDeps(ids) {
-  const r = new Set(ids); const q = [...ids];
-  while (q.length) { const id = q.pop(); const n = allNodes.get(id); if (!n?.deps) continue; for (const d of n.deps) { if (!r.has(d)) { r.add(d); q.push(d); } } }
-  return r;
-}
-function topoSort(ids) {
-  const inD = new Map(); const deps = new Map();
-  for (const id of ids) inD.set(id, 0);
-  for (const id of ids) { const n = allNodes.get(id); if (!n?.deps) continue; for (const d of n.deps) { if (!ids.has(d)) continue; inD.set(id, (inD.get(id)??0)+1); if (!deps.has(d)) deps.set(d, []); deps.get(d).push(id); } }
-  const q = []; for (const [id,deg] of inD) if (deg===0) q.push(id);
-  const sorted = []; while (q.length) { const id=q.shift(); sorted.push(id); for (const dep of deps.get(id)??[]) { const nd=(inD.get(dep)??1)-1; inD.set(dep,nd); if(nd===0) q.push(dep); } }
-  return sorted;
-}
-function renderTemplate(content, vars) {
-  return content.replace(/\{\{(\w+)(?::([^}]*))?\}\}/g, (_, k, d) => vars[k] ?? d ?? `{{${k}}}`);
-}
+  local script
+  script=$(mktemp /tmp/dot-XXXXXX.sh)
+  cd "$PROJECT_DIR"
+  node "$GENERATE" "$script" "$@"
 
-const resolved = resolveDeps(selected);
-const sorted = topoSort(resolved);
-const normalIds = sorted.filter(id => !allNodes.get(id)?.post);
-const postIds = sorted.filter(id => allNodes.get(id)?.post);
-const sections = [`#!/usr/bin/env bash
-set -euo pipefail
-RED='\\033[0;31m'
-GREEN='\\033[0;32m'
-CYAN='\\033[0;36m'
-NC='\\033[0m'
-log_info()  { echo -e "\${CYAN}[INFO]\${NC}  \$*"; }
-log_ok()    { echo -e "\${GREEN}[OK]\${NC}    \$*"; }
-`];
-for (const id of [...normalIds, ...postIds]) {
-  const node = allNodes.get(id);
-  if (!node?.script) continue;
-  const scriptPath = path.resolve(node.script);
-  let content = fs.readFileSync(scriptPath, "utf-8");
-  content = renderTemplate(content, { ...config.vars, ...node.vars });
-  sections.push(`# ─── ${node.label} (${node.id}) ───\n${content}`);
-}
-sections.push('\nlog_ok "Tmux 配置完成!"');
-const output = sections.join("\n\n");
-fs.writeFileSync("tests/integration/tmp/setup-tmux.sh", output, { mode: 0o755 });
-console.log("Generated: tests/integration/tmp/setup-tmux.sh");
-GENEOF
+  docker run -d --name "$CONTAINER" ubuntu:24.04 sleep 600 >/dev/null
+  docker exec "$CONTAINER" bash -c "apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1"
+  docker cp "$script" "$CONTAINER":/tmp/setup.sh
+  rm -f "$script"
 
-TEST_DIR="$PROJECT_DIR/tests/integration/tmp"
-log_info "脚本生成成功"
-
-# ── 测试 1: 语法校验 ──
-log_header "测试 1: bash -n 语法校验"
-if bash -n "$TEST_DIR/setup-tmux.sh" 2>/dev/null; then
-  log_ok "语法校验通过"
-else
-  log_fail "语法校验失败"
-fi
-
-# ── 测试 2: Docker 容器中执行 ──
-log_header "测试 2: Docker 容器执行 (ubuntu:24.04)"
-
-CONTAINER_NAME="dot-test-tmux"
-docker rm -f "$CONTAINER_NAME" 2>/dev/null || true
-
-log_info "启动容器..."
-docker run -d --name "$CONTAINER_NAME" ubuntu:24.04 sleep 300
-
-log_info "预装基础依赖..."
-docker exec "$CONTAINER_NAME" bash -c "apt-get update -qq && apt-get install -y -qq git curl >/dev/null 2>&1"
-
-log_info "复制脚本到容器..."
-docker cp "$TEST_DIR/setup-tmux.sh" "$CONTAINER_NAME":/tmp/setup-tmux.sh
-
-log_info "执行脚本..."
-if docker exec "$CONTAINER_NAME" bash /tmp/setup-tmux.sh; then
-  log_ok "脚本执行成功 (exit code 0)"
-else
-  log_fail "脚本执行失败"
-fi
-
-# ── 测试 3: 验证安装结果 ──
-log_header "测试 3: 验证安装结果"
-
-# 检查 tmux 是否安装
-if docker exec "$CONTAINER_NAME" tmux -V &>/dev/null; then
-  TMUX_VER=$(docker exec "$CONTAINER_NAME" tmux -V)
-  log_ok "tmux 已安装: $TMUX_VER"
-else
-  log_fail "tmux 未安装"
-fi
-
-# 检查 tmux.conf 是否生成
-if docker exec "$CONTAINER_NAME" test -f /root/.tmux.conf; then
-  log_ok "~/.tmux.conf 已生成"
-else
-  log_fail "~/.tmux.conf 不存在"
-fi
-
-# 检查 tmux.conf 内容
-TMUX_CONF=$(docker exec "$CONTAINER_NAME" cat /root/.tmux.conf)
-
-check_conf() {
-  local pattern="$1" label="$2"
-  if echo "$TMUX_CONF" | grep -q "$pattern"; then
-    log_ok "$label"
+  if docker exec "$CONTAINER" bash /tmp/setup.sh >/dev/null 2>&1; then
+    log_ok "脚本执行成功"
+    return 0
   else
-    log_fail "$label"
+    log_fail "脚本执行失败"
+    docker rm -f "$CONTAINER" 2>/dev/null; CONTAINER=""
+    return 1
   fi
 }
 
-check_conf "prefix C-a"                           "前缀键配置正确 (C-a)"
-check_conf "mouse on"                             "鼠标支持已启用"
-check_conf "base-index 1"                         "窗口索引从 1 开始"
-check_conf "@plugin 'tmux-plugins/tpm'"           "TPM 声明已写入"
-check_conf "run '~/.tmux/plugins/tpm/tpm'"        "TPM 初始化在文件末尾"
-check_conf "@plugin 'tmux-plugins/tmux-resurrect'" "resurrect 插件已声明"
+# ── 验证 tmux 能正常工作 ──
+check_tmux() {
+  [ -z "$CONTAINER" ] && return
+  if docker exec "$CONTAINER" tmux new-session -d -s t 2>/dev/null; then
+    log_ok "tmux 可以启动会话"
+    # source 必须在 session 存活时执行
+    docker exec "$CONTAINER" tmux source-file /root/.tmux.conf 2>/dev/null \
+      && log_ok "tmux.conf source 成功" || log_fail "tmux.conf source 失败"
+    docker exec "$CONTAINER" tmux kill-session -t t 2>/dev/null || true
+  else
+    log_fail "tmux 无法启动会话"
+  fi
+  local v; v=$(docker exec "$CONTAINER" tmux -V 2>/dev/null) && log_ok "版本: $v"
+}
 
-# ── 清理 ──
-log_header "测试完成"
-docker rm -f "$CONTAINER_NAME" &>/dev/null
+# ── 检查 tmux.conf 内容 ──
+check_conf() {
+  [ -z "$CONTAINER" ] && return
+  local conf; conf=$(docker exec "$CONTAINER" cat /root/.tmux.conf 2>/dev/null)
+  echo "$conf" | grep -q "prefix"     && log_ok "前缀键已配置"    || log_fail "前缀键缺失"
+  echo "$conf" | grep -q "mouse on"   && log_ok "鼠标支持已启用"  || log_fail "鼠标支持缺失"
+  echo "$conf" | grep -q "base-index" && log_ok "窗口索引已配置"  || log_fail "窗口索引缺失"
+}
 
+# ── 检查插件是否安装 ──
+check_plugins() {
+  [ -z "$CONTAINER" ] && return
+  docker exec "$CONTAINER" test -d /root/.tmux/plugins/tpm && log_ok "TPM 目录存在" || log_fail "TPM 目录缺失"
+  shift
+  for p in "$@"; do
+    docker exec "$CONTAINER" test -d "/root/.tmux/plugins/$p" && log_ok "插件 $p 已安装" || log_fail "插件 $p 未安装"
+  done
+}
+
+# ── 清理当前容器 ──
+teardown() {
+  docker rm -f "$CONTAINER" 2>/dev/null || true
+  CONTAINER=""
+}
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  测试 1: 最小配置（无插件）
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setup_and_run "最小配置: apt + Ctrl+A + 基础选项" \
+  "tmux-install-apt" "tmux-header" "tmux-prefix-ctrl-a" \
+  "tmux-status-minimal" "tmux-opt-mouse" "tmux-opt-index" "tmux-opt-reload" || true
+
+check_tmux
+check_conf
+if [ -n "$CONTAINER" ]; then
+  conf=$(docker exec "$CONTAINER" cat /root/.tmux.conf 2>/dev/null)
+  echo "$conf" | grep -q "prefix C-a" && log_ok "前缀是 Ctrl+A" || log_fail "前缀不是 Ctrl+A"
+  echo "$conf" | grep -q "@plugin" && log_fail "不应有插件声明" || log_ok "无插件声明"
+fi
+teardown
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  测试 2: Ctrl+B + 丰富状态栏 + vi 模式
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setup_and_run "Ctrl+B + 丰富状态栏 + vi 模式" \
+  "tmux-install-apt" "tmux-header" "tmux-prefix-ctrl-b" \
+  "tmux-status-rich" "tmux-opt-vi" "tmux-opt-split" || true
+
+check_tmux
+if [ -n "$CONTAINER" ]; then
+  conf=$(docker exec "$CONTAINER" cat /root/.tmux.conf 2>/dev/null)
+  echo "$conf" | grep -q "prefix C-b"        && log_ok "前缀是 Ctrl+B"        || log_fail "前缀不是 Ctrl+B"
+  echo "$conf" | grep -q "mode-keys vi"      && log_ok "Vi 模式已启用"        || log_fail "Vi 模式未启用"
+  echo "$conf" | grep -q "cpu_percentage\|mem_percentage" && log_ok "丰富状态栏" || log_fail "丰富状态栏缺失"
+fi
+teardown
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  测试 3: 完整插件配置
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setup_and_run "完整配置: TPM + resurrect + yank + sensible" \
+  "tmux-install-apt" "tmux-header" "tmux-prefix-ctrl-a" \
+  "tmux-tpm" "tmux-plugin-resurrect" "tmux-plugin-yank" "tmux-plugin-sensible" "tmux-tpm-finalize" \
+  "tmux-status-minimal" "tmux-opt-mouse" "tmux-opt-index" || true
+
+check_tmux
+check_conf
+check_plugins "tmux-resurrect" "tmux-yank" "tmux-sensible"
+
+if [ -n "$CONTAINER" ]; then
+  conf=$(docker exec "$CONTAINER" cat /root/.tmux.conf 2>/dev/null)
+  last=$(echo "$conf" | grep -n "run.*tpm" | tail -1 | cut -d: -f1)
+  total=$(echo "$conf" | wc -l)
+  [ "$last" -ge $((total - 2)) ] && log_ok "TPM init 在文件末尾" || log_fail "TPM init 不在末尾"
+fi
+teardown
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  测试 4: continuum 自动依赖 resurrect
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+setup_and_run "continuum 自动依赖 resurrect" \
+  "tmux-install-apt" "tmux-header" "tmux-prefix-ctrl-a" \
+  "tmux-tpm" "tmux-plugin-continuum" "tmux-tpm-finalize" \
+  "tmux-status-minimal" || true
+
+check_tmux
+check_plugins "tmux-resurrect" "tmux-continuum"
+if [ -n "$CONTAINER" ]; then
+  conf=$(docker exec "$CONTAINER" cat /root/.tmux.conf 2>/dev/null)
+  echo "$conf" | grep -q "continuum-restore" && log_ok "continuum 自动保存已配置" || log_fail "continuum 配置缺失"
+fi
+teardown
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  结果
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+log_header "结果汇总"
 echo ""
-echo -e "${GREEN}通过: $PASS${NC}  ${RED}失败: $FAIL${NC}"
+echo -e "  ${GREEN}通过: $PASS${NC}  ${RED}失败: $FAIL${NC}"
 echo ""
 [ "$FAIL" -eq 0 ] && exit 0 || exit 1
