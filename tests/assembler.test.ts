@@ -278,6 +278,10 @@ describe("assembleStandalone", () => {
 
     const result = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
     expect(result).toContain("dot_record_key_prompt()");
+    expect(result).toContain("dot_compose_tmux_key_prompt()");
+    expect(result).toContain("Alt/Meta");
+    expect(result).toContain("Backslash");
+    expect(result).toContain("${prefix}-${suffix}");
     expect(result).toContain("DOT_PROMPT_TYPES['tmux-prefix-custom']='key'");
     expect(result).toContain("DOT_PROMPT_VARS['tmux-prefix-custom']='custom_prefix'");
     expect(result).toContain("${DOT_VARS[custom_prefix]:-C-x}");
