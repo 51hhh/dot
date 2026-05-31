@@ -181,7 +181,9 @@ dot_key_to_tmux() {
 }
 
 dot_record_key_prompt() {
-  local item="$1" var="@{DOT_PROMPT_VARS[$item]:-}" label="@{DOT_PROMPT_LABELS[$item]:-Press a key}"
+  local item="$1"
+  local var="@{DOT_PROMPT_VARS[$item]:-}"
+  local label="@{DOT_PROMPT_LABELS[$item]:-Press a key}"
   local key value
 
   while true; do
