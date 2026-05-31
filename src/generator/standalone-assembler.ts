@@ -140,9 +140,19 @@ dot_pause() {
   dot_read_key >/dev/null || true
 }
 
+dot_visible_children() {
+  local parent="$1" child out=()
+  for child in @{DOT_CHILDREN[$parent]:-}; do
+    if [[ "@{DOT_HIDDEN[$child]:-0}" != "1" ]]; then
+      out+=("$child")
+    fi
+  done
+  printf '%s ' "@{out[@]}"
+}
+
 dot_has_children() {
   local id="$1"
-  [[ -n "@{DOT_CHILDREN[$id]:-}" ]]
+  [[ -n "$(dot_visible_children "$id")" ]]
 }
 
 dot_is_item_selected() {
@@ -151,20 +161,38 @@ dot_is_item_selected() {
     return 0
   fi
 
-  if dot_has_children "$id"; then
-    local leaf
+  if [[ -n "@{DOT_LEAVES[$id]:-}" ]]; then
+    local leaf any=0
     for leaf in @{DOT_LEAVES[$id]:-}; do
-      if [[ "@{DOT_SELECTED[$leaf]:-0}" != "1" ]]; then
+      if [[ "@{DOT_SELECTED[$leaf]:-0}" == "1" ]]; then
+        any=1
+      else
         return 1
       fi
     done
-    return 0
+    [[ "$any" == "1" ]]
+    return
   fi
 
   return 1
 }
 
-dot_toggle_item() {
+dot_select_single_item() {
+  local current="$1" id="$2" sibling leaf
+  for sibling in @{DOT_CHILDREN[$current]:-}; do
+    unset "DOT_SELECTED[$sibling]"
+    for leaf in @{DOT_LEAVES[$sibling]:-$sibling}; do
+      unset "DOT_SELECTED[$leaf]"
+    done
+  done
+
+  DOT_SELECTED[$id]=1
+  for leaf in @{DOT_LEAVES[$id]:-$id}; do
+    DOT_SELECTED[$leaf]=1
+  done
+}
+
+dot_toggle_multi_item() {
   local id="$1"
   local leaves="@{DOT_LEAVES[$id]:-$id}"
   local leaf all_selected=1
@@ -189,46 +217,167 @@ dot_toggle_item() {
   fi
 }
 
-dot_render_menu() {
-  local current="$1" selected="$2"
-  local -a items=()
-  read -r -a items <<< "@{DOT_CHILDREN[$current]:-}"
-
+dot_render_header() {
+  local title="$1" subtitle="@{2:-}"
   dot_clear_screen
-  printf "%b%s%b\\n" "$BOLD" "@{DOT_LABELS[$current]:-$DOT_TITLE}" "$NC"
-  if [[ -n "@{DOT_DESCRIPTIONS[$current]:-}" ]]; then
-    printf "%b%s%b\\n" "$DIM" "@{DOT_DESCRIPTIONS[$current]}" "$NC"
+  printf "%b%s%b\\n" "$BOLD" "$title" "$NC"
+  if [[ -n "$subtitle" ]]; then
+    printf "%b%s%b\\n" "$DIM" "$subtitle" "$NC"
   fi
-  printf '%s\\n' "────────────────────────────────────────"
+}
 
-  local i id pointer mark arrow desc
+dot_render_flow_progress() {
+  local flow="$1" current_step="$2"
+  local steps=() step index=1 total=0 line=""
+  read -r -a steps <<< "$(dot_visible_children "$flow")"
+  total="@{#steps[@]}"
+
+  printf "%b流程进度:%b " "$CYAN" "$NC"
+  for step in "@{steps[@]}"; do
+    if [[ "$step" == "$current_step" ]]; then
+      line+="@{BOLD}@{DOT_LABELS[$step]}@{NC}"
+    else
+      line+="@{DOT_LABELS[$step]}"
+    fi
+    if [[ "$index" -lt "$total" ]]; then
+      line+=" → "
+    fi
+    index=$((index + 1))
+  done
+  printf "%b\\n\\n" "$line"
+}
+
+dot_render_single_menu() {
+  local current="$1" selected="$2" title="$3" subtitle="@{4:-}"
+  local items=() i id pointer desc
+  read -r -a items <<< "$(dot_visible_children "$current")"
+
+  dot_render_header "$title" "$subtitle"
+  printf '%s\\n' "────────────────────────────────────────"
   for i in "@{!items[@]}"; do
     id="@{items[$i]}"
     pointer=" "
-    if [[ "$i" -eq "$selected" ]]; then
-      pointer="@{CYAN}>@{NC}"
-    fi
-
-    mark=" "
-    if dot_is_item_selected "$id"; then
-      mark="x"
-    fi
-
-    arrow=""
-    if dot_has_children "$id"; then
-      arrow=" >"
-    fi
-
+    if [[ "$i" -eq "$selected" ]]; then pointer="@{CYAN}>@{NC}"; fi
     desc=""
-    if [[ -n "@{DOT_DESCRIPTIONS[$id]:-}" ]]; then
-      desc=" - @{DOT_DESCRIPTIONS[$id]}"
-    fi
-
-    printf " %b [%s] %s%s%b%s%b\\n" "$pointer" "$mark" "@{DOT_LABELS[$id]}" "$arrow" "$DIM" "$desc" "$NC"
+    if [[ -n "@{DOT_DESCRIPTIONS[$id]:-}" ]]; then desc=" - @{DOT_DESCRIPTIONS[$id]}"; fi
+    printf " %b %s%b%s%b\\n" "$pointer" "@{DOT_LABELS[$id]}" "$DIM" "$desc" "$NC"
   done
-
   printf '%s\\n' "────────────────────────────────────────"
-  printf "%b↑/↓%b navigate  %bSpace%b select  %bEnter%b enter/toggle  %bb/←%b back  %bc%b confirm  %bq%b quit\\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC"
+  printf "%b↑/↓%b 选择  %bEnter%b 确认  %bb/←%b 返回  %bq%b 退出\\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC"
+}
+
+dot_render_multi_menu() {
+  local current="$1" selected="$2" title="$3" subtitle="@{4:-}"
+  local items=() i id pointer mark desc
+  read -r -a items <<< "$(dot_visible_children "$current")"
+
+  dot_render_header "$title" "$subtitle"
+  printf '%s\\n' "────────────────────────────────────────"
+  for i in "@{!items[@]}"; do
+    id="@{items[$i]}"
+    pointer=" "
+    if [[ "$i" -eq "$selected" ]]; then pointer="@{CYAN}>@{NC}"; fi
+    mark=" "
+    if dot_is_item_selected "$id"; then mark="x"; fi
+    desc=""
+    if [[ -n "@{DOT_DESCRIPTIONS[$id]:-}" ]]; then desc=" - @{DOT_DESCRIPTIONS[$id]}"; fi
+    printf " %b [%s] %s%b%s%b\\n" "$pointer" "$mark" "@{DOT_LABELS[$id]}" "$DIM" "$desc" "$NC"
+  done
+  printf '%s\\n' "────────────────────────────────────────"
+  printf "%b↑/↓%b 选择  %bSpace%b 切换  %bEnter%b 下一步  %bb/←%b 返回  %bq%b 退出\\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC"
+}
+
+dot_choose_single() {
+  local current="$1" title="$2" subtitle="@{3:-}"
+  local selected=0 key items=() id
+
+  while true; do
+    read -r -a items <<< "$(dot_visible_children "$current")"
+    if [[ "@{#items[@]}" -eq 0 ]]; then return 1; fi
+    if [[ "$selected" -ge "@{#items[@]}" ]]; then selected=0; fi
+
+    dot_render_single_menu "$current" "$selected" "$title" "$subtitle"
+    key="$(dot_read_key)" || return 1
+
+    case "$key" in
+      $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
+      $'\\e[B') if [[ "$selected" -lt $((@{#items[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
+      $'\\e[D'|b|B) return 2 ;;
+      q|Q) return 1 ;;
+      "") id="@{items[$selected]}"; DOT_CHOICE="$id"; return 0 ;;
+    esac
+  done
+}
+
+dot_choose_multi() {
+  local current="$1" title="$2" subtitle="@{3:-}"
+  local selected=0 key items=() id
+
+  while true; do
+    read -r -a items <<< "$(dot_visible_children "$current")"
+    if [[ "@{#items[@]}" -eq 0 ]]; then return 0; fi
+    if [[ "$selected" -ge "@{#items[@]}" ]]; then selected=0; fi
+
+    dot_render_multi_menu "$current" "$selected" "$title" "$subtitle"
+    key="$(dot_read_key)" || return 1
+
+    case "$key" in
+      $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
+      $'\\e[B') if [[ "$selected" -lt $((@{#items[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
+      $'\\e[D'|b|B) return 2 ;;
+      q|Q) return 1 ;;
+      " ") id="@{items[$selected]}"; dot_toggle_multi_item "$id" ;;
+      "") return 0 ;;
+    esac
+  done
+}
+
+dot_run_step() {
+  local flow="$1" step="$2" step_index="$3" step_total="$4"
+  local mode="@{DOT_MODES[$step]:-multi}"
+  local title="dot > @{DOT_LABELS[$flow]}"
+  local subtitle=""
+  subtitle="步骤 @{step_index}/@{step_total}: @{DOT_LABELS[$step]}"
+
+  dot_render_flow_progress "$flow" "$step"
+
+  case "$mode" in
+    single)
+      dot_choose_single "$step" "$title" "$subtitle"
+      local result=$?
+      if [[ "$result" -eq 0 ]]; then
+        dot_select_single_item "$step" "$DOT_CHOICE"
+      fi
+      return "$result"
+      ;;
+    multi)
+      dot_choose_multi "$step" "$title" "$subtitle"
+      return $?
+      ;;
+    *)
+      dot_choose_multi "$step" "$title" "$subtitle"
+      return $?
+      ;;
+  esac
+}
+
+dot_run_flow() {
+  local flow="$1"
+  local steps=() step index=0 total result
+  read -r -a steps <<< "$(dot_visible_children "$flow")"
+  total="@{#steps[@]}"
+
+  while [[ "$index" -lt "$total" ]]; do
+    step="@{steps[$index]}"
+    dot_run_step "$flow" "$step" "$((index + 1))" "$total"
+    result=$?
+    case "$result" in
+      0) index=$((index + 1)) ;;
+      2) if [[ "$index" -gt 0 ]]; then index=$((index - 1)); else return 2; fi ;;
+      *) return 1 ;;
+    esac
+  done
+  return 0
 }
 
 dot_add_with_deps() {
@@ -263,7 +412,11 @@ dot_build_plan() {
       continue
     fi
 
-    if dot_has_children "$id"; then
+    if [[ "@{DOT_HIDDEN[$id]:-0}" == "1" ]]; then
+      continue
+    fi
+
+    if [[ -n "@{DOT_LEAVES[$id]:-}" ]]; then
       for leaf in @{DOT_LEAVES[$id]:-}; do
         dot_add_with_deps "$leaf"
       done
@@ -283,7 +436,7 @@ dot_show_plan() {
   local id index=1
   for id in "@{DOT_PLAN[@]}"; do
     if [[ "@{DOT_POST[$id]:-0}" == "1" ]]; then
-      printf " %2d. %s %b(post)%b\\n" "$index" "@{DOT_LABELS[$id]}" "$DIM" "$NC"
+      printf " %2d. %s %b(auto)%b\\n" "$index" "@{DOT_LABELS[$id]}" "$DIM" "$NC"
     else
       printf " %2d. %s\\n" "$index" "@{DOT_LABELS[$id]}"
     fi
@@ -305,66 +458,6 @@ dot_confirm_plan() {
   printf "Execute this plan? [y/N] "
   read -r answer
   [[ "$answer" =~ ^[Yy]$ ]]
-}
-
-dot_navigate() {
-  local current="__root"
-  local -a stack=()
-  local selected=0 key id
-
-  while true; do
-    local -a items=()
-    read -r -a items <<< "@{DOT_CHILDREN[$current]:-}"
-    if [[ "@{#items[@]}" -eq 0 ]]; then
-      return 0
-    fi
-
-    if [[ "$selected" -ge "@{#items[@]}" ]]; then
-      selected=0
-    fi
-
-    dot_render_menu "$current" "$selected"
-    key="$(dot_read_key)" || return 1
-
-    case "$key" in
-      $'\\e[A')
-        if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi
-        ;;
-      $'\\e[B')
-        if [[ "$selected" -lt $((@{#items[@]} - 1)) ]]; then selected=$((selected + 1)); fi
-        ;;
-      $'\\e[D'|b|B)
-        if [[ "@{#stack[@]}" -gt 0 ]]; then
-          current="@{stack[-1]}"
-          unset 'stack[-1]'
-          selected=0
-        fi
-        ;;
-      " ")
-        id="@{items[$selected]}"
-        dot_toggle_item "$id"
-        ;;
-      "")
-        id="@{items[$selected]}"
-        if dot_has_children "$id"; then
-          stack+=("$current")
-          current="$id"
-          selected=0
-        else
-          dot_toggle_item "$id"
-        fi
-        ;;
-      c|C)
-        dot_build_plan
-        if dot_confirm_plan; then
-          return 0
-        fi
-        ;;
-      q|Q)
-        return 1
-        ;;
-    esac
-  done
 }
 
 dot_execute_plan() {
@@ -422,10 +515,33 @@ dot_print_summary() {
 }
 
 dot_main() {
-  if ! dot_navigate; then
-    printf '\\nAborted.\\n'
-    exit 0
-  fi
+  while true; do
+    dot_choose_single "__root" "$DOT_TITLE" "@{DOT_DESCRIPTIONS[__root]:-}"
+    local result=$?
+    case "$result" in
+      0) ;;
+      *) printf '\\nAborted.\\n'; exit 0 ;;
+    esac
+
+    local task="$DOT_CHOICE"
+    if [[ "@{DOT_MODES[$task]:-multi}" == "flow" ]]; then
+      dot_run_flow "$task"
+      result=$?
+      if [[ "$result" -eq 2 ]]; then
+        continue
+      elif [[ "$result" -ne 0 ]]; then
+        printf '\\nAborted.\\n'
+        exit 0
+      fi
+    else
+      dot_select_single_item "__root" "$task"
+    fi
+
+    dot_build_plan
+    if dot_confirm_plan; then
+      break
+    fi
+  done
 
   dot_execute_plan
   dot_print_summary
@@ -446,11 +562,15 @@ function generateData(
     "declare -A DOT_CHILDREN=()",
     "declare -A DOT_DEPS=()",
     "declare -A DOT_LEAVES=()",
+    "declare -A DOT_MODES=()",
+    "declare -A DOT_HIDDEN=()",
     "declare -A DOT_POST=()",
     "declare -A DOT_SNIPPET_FUNCS=()",
     assocAssign("DOT_LABELS", ROOT_ID, config.name),
     assocAssign("DOT_DESCRIPTIONS", ROOT_ID, config.description ?? ""),
     assocAssign("DOT_CHILDREN", ROOT_ID, config.menu.map((item) => item.id).join(" ")),
+    assocAssign("DOT_MODES", ROOT_ID, config.menuMode ?? "multi"),
+    assocAssign("DOT_HIDDEN", ROOT_ID, "0"),
   ];
 
   for (const [id, node] of allNodes) {
@@ -463,6 +583,8 @@ function generateData(
     lines.push(assocAssign("DOT_CHILDREN", id, children));
     lines.push(assocAssign("DOT_DEPS", id, deps));
     lines.push(assocAssign("DOT_LEAVES", id, leaves));
+    lines.push(assocAssign("DOT_MODES", id, node.mode ?? "multi"));
+    lines.push(assocAssign("DOT_HIDDEN", id, node.hidden ? "1" : "0"));
     lines.push(assocAssign("DOT_POST", id, node.post ? "1" : "0"));
 
     const func = snippetFunctions.get(id);

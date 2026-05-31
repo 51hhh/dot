@@ -35,6 +35,27 @@ describe("ConfigSchema", () => {
     expect(result.menu[0].children).toHaveLength(1);
   });
 
+  it("accepts menu modes and hidden items", () => {
+    const result = ConfigSchema.parse({
+      name: "dot",
+      menuMode: "single",
+      menu: [
+        {
+          id: "tmux",
+          label: "Tmux",
+          mode: "flow",
+          children: [
+            { id: "tmux-install", label: "Install", mode: "single", children: [{ id: "apt", label: "apt" }] },
+            { id: "tmux-header", label: "Header", hidden: true },
+          ],
+        },
+      ],
+    });
+    expect(result.menuMode).toBe("single");
+    expect(result.menu[0].mode).toBe("flow");
+    expect(result.menu[0].children?.[1].hidden).toBe(true);
+  });
+
   it("rejects empty name", () => {
     expect(() => ConfigSchema.parse({ ...validConfig, name: "" })).toThrow();
   });
