@@ -1,0 +1,154 @@
+name: "dot 安装器"
+version: "1.0"
+description: "选择要安装/配置的工具"
+menuMode: "single"
+
+output:
+  filename: "dot.sh"
+  dir: "dist"
+
+menu:
+  - id: "tmux"
+    label: "Tmux 一键配置"
+    description: "安装方式、前缀键、插件、状态栏、基础选项"
+    mode: "flow"
+    children:
+      # ── 安装方式 ──
+      - id: "tmux-install"
+        label: "安装方式"
+        mode: "single"
+        description: "选择 Tmux 安装方式"
+        children:
+          - id: "tmux-install-apt"
+            label: "包管理器安装 (apt)"
+            description: "简单快速，版本可能不是最新"
+            script: "../templates/tmux/install-apt.sh"
+          - id: "tmux-install-source"
+            label: "源码编译安装"
+            description: "获取最新版本，需要编译环境"
+            script: "../templates/tmux/install-source.sh"
+            vars:
+              tmux_version: "3.4"
+
+      # ── 前缀键 ──
+      - id: "tmux-prefix"
+        label: "前缀键"
+        mode: "single"
+        description: "选择 Tmux 命令前缀键"
+        children:
+          - id: "tmux-prefix-ctrl-a"
+            label: "Ctrl+A (screen 风格)"
+            description: "从 screen 迁移的用户推荐"
+            script: "../templates/tmux/prefix-ctrl-a.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-prefix-ctrl-b"
+            label: "Ctrl+B (默认)"
+            description: "Tmux 默认前缀键"
+            script: "../templates/tmux/prefix-ctrl-b.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-prefix-custom"
+            label: "自定义前缀键"
+            description: "自定义你喜欢的前缀键"
+            script: "../templates/tmux/prefix-custom.sh"
+            deps: ["tmux-header"]
+            vars:
+              custom_prefix: "C-x"
+
+      # ── 插件管理 ──
+      - id: "tmux-plugins"
+        label: "插件管理"
+        mode: "multi"
+        description: "TPM 插件管理器及常用插件"
+        children:
+          - id: "tmux-tpm"
+            label: "安装 TPM 插件管理器"
+            description: "Tmux Plugin Manager，安装其他插件的基础"
+            script: "../templates/tmux/tpm-install.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-plugin-resurrect"
+            label: "resurrect (会话保存恢复)"
+            description: "保存 tmux 会话，重启后恢复"
+            script: "../templates/tmux/plugin-resurrect.sh"
+            deps: ["tmux-tpm"]
+          - id: "tmux-plugin-continuum"
+            label: "continuum (自动保存)"
+            description: "定期自动保存会话，依赖 resurrect"
+            script: "../templates/tmux/plugin-continuum.sh"
+            deps: ["tmux-tpm", "tmux-plugin-resurrect"]
+          - id: "tmux-plugin-yank"
+            label: "yank (系统剪贴板)"
+            description: "复制内容同步到系统剪贴板"
+            script: "../templates/tmux/plugin-yank.sh"
+            deps: ["tmux-tpm"]
+          - id: "tmux-plugin-sensible"
+            label: "sensible (合理默认)"
+            description: "一套开箱即用的合理默认配置"
+            script: "../templates/tmux/plugin-sensible.sh"
+            deps: ["tmux-tpm"]
+          - id: "tmux-plugin-open"
+            label: "open (快速打开)"
+            description: "按 o 打开文件/路径，Ctrl+o 打开 URL"
+            script: "../templates/tmux/plugin-open.sh"
+            deps: ["tmux-tpm"]
+          - id: "tmux-tpm-finalize"
+            label: "TPM 初始化"
+            description: "加载 TPM 引擎，自动在所有插件之后执行"
+            script: "../templates/tmux/tpm-finalize.sh"
+            deps: ["tmux-tpm"]
+            post: true
+
+      # ── 状态栏 ──
+      - id: "tmux-status"
+        label: "状态栏风格"
+        mode: "single"
+        description: "选择底部状态栏样式"
+        children:
+          - id: "tmux-status-minimal"
+            label: "简洁风格"
+            description: "只显示会话名、窗口和时间"
+            script: "../templates/tmux/status-minimal.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-status-rich"
+            label: "信息丰富"
+            description: "显示 CPU、内存、详细时间"
+            script: "../templates/tmux/status-rich.sh"
+            deps: ["tmux-header"]
+
+      # ── 基础配置 ──
+      - id: "tmux-options"
+        label: "基础配置"
+        mode: "multi"
+        description: "常用基础选项"
+        children:
+          - id: "tmux-opt-mouse"
+            label: "鼠标支持"
+            description: "支持鼠标点击切换面板、调整大小"
+            script: "../templates/tmux/opt-mouse.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-opt-vi"
+            label: "Vi 模式"
+            description: "复制模式使用 vi 键位"
+            script: "../templates/tmux/opt-vi-mode.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-opt-index"
+            label: "窗口索引从 1 开始"
+            description: "默认从 0 开始，改为 1 更直觉"
+            script: "../templates/tmux/opt-index-1.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-opt-split"
+            label: "直觉化分割快捷键"
+            description: "| 水平分割，- 垂直分割，Alt+方向键切换"
+            script: "../templates/tmux/opt-split.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-opt-reload"
+            label: "快速重载配置"
+            description: "prefix+r 重新加载 tmux.conf"
+            script: "../templates/tmux/opt-reload.sh"
+            deps: ["tmux-header"]
+
+      # ── 配置初始化（内部节点，自动依赖） ──
+      - id: "tmux-header"
+        label: "配置文件初始化"
+        hidden: true
+        description: "初始化 tmux.conf（自动选中）"
+        script: "../templates/tmux/header.sh"

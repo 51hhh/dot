@@ -5,6 +5,7 @@ import path from "node:path";
 
 const cli = path.resolve(import.meta.dirname, "../dist/index.js");
 const config = path.resolve(import.meta.dirname, "../configs/tmux.yaml");
+const dotConfig = path.resolve(import.meta.dirname, "../configs/dot.yaml");
 
 function run(args: string[]): { stdout: string; exitCode: number } {
   try {
@@ -22,7 +23,7 @@ function run(args: string[]): { stdout: string; exitCode: number } {
 describe("CLI --select", () => {
   it("selects leaf nodes", () => {
     const { stdout, exitCode } = run([
-      "--config", config,
+      "--config", dotConfig,
       "--select", "tmux-install-apt", "tmux-header",
       "--quiet", "--dry-run",
     ]);
@@ -112,8 +113,29 @@ describe("CLI build", () => {
     expect(exitCode).toBe(0);
 
     const script = fs.readFileSync(output, "utf-8");
-    expect(script).toContain("dot_navigate()");
+    expect(script).toContain("dot_choose_single()");
+    expect(script).toContain("dot_run_flow()");
     expect(script).toContain("DOT_CHILDREN['__root']");
     expect(script).toContain('dot_main "$@"');
+  });
+});
+
+
+describe("CLI build dot config", () => {
+  it("root is the dot home screen", () => {
+    const output = path.resolve(import.meta.dirname, "../dist/test-dot-root.sh");
+    const { exitCode } = run([
+      "build",
+      "--config", dotConfig,
+      "--output", output,
+      "--quiet",
+    ]);
+    expect(exitCode).toBe(0);
+    const script = fs.readFileSync(output, "utf-8");
+    expect(script).toContain("DOT_TITLE='dot 安装器'");
+    expect(script).toContain("DOT_CHILDREN['__root']='tmux'");
+    expect(script).toContain("DOT_MODES['__root']='single'");
+    expect(script).toContain("DOT_MODES['tmux']='flow'");
+    expect(script).not.toContain("DOT_CHILDREN['__root']='tmux-install");
   });
 });

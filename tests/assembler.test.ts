@@ -154,6 +154,46 @@ describe("assemble", () => {
 
     fs.rmSync(dir, { recursive: true });
   });
+
+  it("serializes flow modes and hidden items", () => {
+    const dir = tmpDir();
+    const headerPath = writeTmpFile(dir, "header.sh", "echo header");
+    const aptPath = writeTmpFile(dir, "apt.sh", "echo apt");
+    const config: Config = {
+      name: "dot",
+      version: "1.0",
+      menuMode: "single",
+      output: { filename: "dot.sh", dir },
+      menu: [
+        {
+          id: "tmux",
+          label: "Tmux",
+          mode: "flow",
+          children: [
+            {
+              id: "tmux-install",
+              label: "Install",
+              mode: "single",
+              children: [{ id: "tmux-install-apt", label: "apt", script: aptPath, deps: ["tmux-header"] }],
+            },
+            { id: "tmux-header", label: "Header", script: headerPath, hidden: true },
+          ],
+        },
+      ],
+    };
+
+    const result = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+    expect(result).toContain("DOT_MODES['__root']='single'");
+    expect(result).toContain("DOT_MODES['tmux']='flow'");
+    expect(result).toContain("DOT_MODES['tmux-install']='single'");
+    expect(result).toContain("DOT_HIDDEN['tmux-header']='1'");
+    expect(result).toContain("DOT_CHILDREN['__root']='tmux'");
+    expect(result).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-header'");
+    expect(result).toContain("DOT_SNIPPET_FUNCS['tmux-header']");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
 });
 
 
@@ -171,7 +211,8 @@ describe("assembleStandalone", () => {
 
     const result = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
     expect(result).toContain("#!/usr/bin/env bash");
-    expect(result).toContain("dot_navigate()");
+    expect(result).toContain("dot_choose_single()");
+    expect(result).toContain("dot_run_flow()");
     expect(result).toContain("DOT_CHILDREN['__root']='a'");
     expect(result).toContain("echo standalone");
     expect(result).toContain('dot_main "$@"');
