@@ -111,6 +111,7 @@ DOT_POST_PLAN=()
 declare -A DOT_SELECTED=()
 declare -A DOT_PLAN_ADDED=()
 declare -A DOT_RESULTS=()
+declare -A DOT_VARS=()
 
 restore_terminal() {
   printf '\\033[?25h'
@@ -138,6 +139,77 @@ dot_read_key() {
 dot_pause() {
   printf "\\nPress any key to continue..."
   dot_read_key >/dev/null || true
+}
+
+
+dot_key_to_tmux() {
+  local key="$1"
+  case "$key" in
+    $'\x01') printf 'C-a' ;;
+    $'\x02') printf 'C-b' ;;
+    $'\x03') printf 'C-c' ;;
+    $'\x04') printf 'C-d' ;;
+    $'\x05') printf 'C-e' ;;
+    $'\x06') printf 'C-f' ;;
+    $'\x07') printf 'C-g' ;;
+    $'\x08') printf 'C-h' ;;
+    $'\x09') printf 'C-i' ;;
+    $'\x0a') printf 'C-j' ;;
+    $'\x0b') printf 'C-k' ;;
+    $'\x0c') printf 'C-l' ;;
+    $'\x0d') printf 'C-m' ;;
+    $'\x0e') printf 'C-n' ;;
+    $'\x0f') printf 'C-o' ;;
+    $'\x10') printf 'C-p' ;;
+    $'\x11') printf 'C-q' ;;
+    $'\x12') printf 'C-r' ;;
+    $'\x13') printf 'C-s' ;;
+    $'\x14') printf 'C-t' ;;
+    $'\x15') printf 'C-u' ;;
+    $'\x16') printf 'C-v' ;;
+    $'\x17') printf 'C-w' ;;
+    $'\x18') printf 'C-x' ;;
+    $'\x19') printf 'C-y' ;;
+    $'\x1a') printf 'C-z' ;;
+    $'\e') printf 'Escape' ;;
+    $'\e[A') printf 'Up' ;;
+    $'\e[B') printf 'Down' ;;
+    $'\e[C') printf 'Right' ;;
+    $'\e[D') printf 'Left' ;;
+    *) printf '%s' "$key" ;;
+  esac
+}
+
+dot_record_key_prompt() {
+  local item="$1" var="@{DOT_PROMPT_VARS[$item]:-}" label="@{DOT_PROMPT_LABELS[$item]:-Press a key}"
+  local key value
+
+  while true; do
+    dot_render_header "@{DOT_LABELS[$item]}" "$label"
+    printf '%s\n' "────────────────────────────────────────"
+    printf "请直接按下你想要的组合键。按 b 返回。\n"
+    key="$(dot_read_key)" || return 1
+    if [[ "$key" == "b" || "$key" == "B" ]]; then
+      return 2
+    fi
+    value="$(dot_key_to_tmux "$key")"
+
+    dot_render_header "@{DOT_LABELS[$item]}" "$label"
+    printf '%s\n' "────────────────────────────────────────"
+    printf "录制结果：%b%s%b\n\n" "$GREEN" "$value" "$NC"
+    printf "Enter 确认，r 重新录制，b 返回："
+    key="$(dot_read_key)" || return 1
+    case "$key" in
+      "")
+        if [[ -n "$var" ]]; then
+          DOT_VARS[$var]="$value"
+        fi
+        return 0
+        ;;
+      r|R) continue ;;
+      b|B) return 2 ;;
+    esac
+  done
 }
 
 dot_visible_children() {
@@ -347,6 +419,10 @@ dot_run_step() {
       local result=$?
       if [[ "$result" -eq 0 ]]; then
         dot_select_single_item "$step" "$DOT_CHOICE"
+        if [[ "@{DOT_PROMPT_TYPES[$DOT_CHOICE]:-}" == "key" ]]; then
+          dot_record_key_prompt "$DOT_CHOICE"
+          result=$?
+        fi
       fi
       return "$result"
       ;;
@@ -564,6 +640,9 @@ function generateData(
     "declare -A DOT_LEAVES=()",
     "declare -A DOT_MODES=()",
     "declare -A DOT_HIDDEN=()",
+    "declare -A DOT_PROMPT_TYPES=()",
+    "declare -A DOT_PROMPT_VARS=()",
+    "declare -A DOT_PROMPT_LABELS=()",
     "declare -A DOT_POST=()",
     "declare -A DOT_SNIPPET_FUNCS=()",
     assocAssign("DOT_LABELS", ROOT_ID, config.name),
@@ -571,6 +650,9 @@ function generateData(
     assocAssign("DOT_CHILDREN", ROOT_ID, config.menu.map((item) => item.id).join(" ")),
     assocAssign("DOT_MODES", ROOT_ID, config.menuMode ?? "multi"),
     assocAssign("DOT_HIDDEN", ROOT_ID, "0"),
+    assocAssign("DOT_PROMPT_TYPES", ROOT_ID, ""),
+    assocAssign("DOT_PROMPT_VARS", ROOT_ID, ""),
+    assocAssign("DOT_PROMPT_LABELS", ROOT_ID, ""),
   ];
 
   for (const [id, node] of allNodes) {
@@ -585,6 +667,9 @@ function generateData(
     lines.push(assocAssign("DOT_LEAVES", id, leaves));
     lines.push(assocAssign("DOT_MODES", id, node.mode ?? "multi"));
     lines.push(assocAssign("DOT_HIDDEN", id, node.hidden ? "1" : "0"));
+    lines.push(assocAssign("DOT_PROMPT_TYPES", id, node.prompt?.type ?? ""));
+    lines.push(assocAssign("DOT_PROMPT_VARS", id, node.prompt?.var ?? ""));
+    lines.push(assocAssign("DOT_PROMPT_LABELS", id, node.prompt?.label ?? ""));
     lines.push(assocAssign("DOT_POST", id, node.post ? "1" : "0"));
 
     const func = snippetFunctions.get(id);
@@ -594,6 +679,26 @@ function generateData(
   }
 
   return lines.join("\n");
+}
+
+function collectPrompts(node: MenuItem): Array<{ var: string }> {
+  const prompts: Array<{ var: string }> = [];
+  function walk(item: MenuItem) {
+    if (item.prompt) {
+      prompts.push({ var: item.prompt.var });
+    }
+    for (const child of item.children ?? []) {
+      walk(child);
+    }
+  }
+  walk(node);
+  return prompts;
+}
+
+function replaceRenderedPromptValue(content: string, varName: string, fallback: string): string {
+  if (!fallback) return content;
+  const escaped = fallback.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return content.replace(new RegExp(escaped, "g"), `\${DOT_VARS[${varName}]:-${fallback}}`);
 }
 
 function generateSnippetFunctions(
@@ -613,7 +718,10 @@ function generateSnippetFunctions(
       ? node.script
       : path.resolve(configDir, node.script);
     const mergedVars = { ...config.vars, ...node.vars };
-    const scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();
+    let scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();
+    for (const prompt of collectPrompts(node)) {
+      scriptContent = replaceRenderedPromptValue(scriptContent, prompt.var, mergedVars[prompt.var] ?? "");
+    }
 
     sections.push(`# ─── ${node.label} (${node.id}) ───`);
     sections.push(`${func}() {`);

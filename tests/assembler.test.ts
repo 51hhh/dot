@@ -194,6 +194,8 @@ describe("assemble", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+
+
 });
 
 
@@ -240,4 +242,47 @@ describe("assembleStandalone", () => {
 
     fs.rmSync(dir, { recursive: true });
   });
+
+  it("records key prompts for runtime variables", () => {
+    const dir = tmpDir();
+    const scriptPath = writeTmpFile(dir, "prefix.sh", "set -g prefix {{custom_prefix:C-x}}");
+    const config: Config = {
+      name: "dot",
+      version: "1.0",
+      menuMode: "single",
+      output: { filename: "dot.sh", dir },
+      menu: [
+        {
+          id: "tmux",
+          label: "Tmux",
+          mode: "flow",
+          children: [
+            {
+              id: "tmux-prefix",
+              label: "Prefix",
+              mode: "single",
+              children: [
+                {
+                  id: "tmux-prefix-custom",
+                  label: "Custom",
+                  script: scriptPath,
+                  vars: { custom_prefix: "C-x" },
+                  prompt: { type: "key", var: "custom_prefix", label: "Record prefix" },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+    expect(result).toContain("dot_record_key_prompt()");
+    expect(result).toContain("DOT_PROMPT_TYPES['tmux-prefix-custom']='key'");
+    expect(result).toContain("DOT_PROMPT_VARS['tmux-prefix-custom']='custom_prefix'");
+    expect(result).toContain("${DOT_VARS[custom_prefix]:-C-x}");
+
+    fs.rmSync(dir, { recursive: true });
+  });
+
 });

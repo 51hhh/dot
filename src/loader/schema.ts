@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+export const PromptSchema = z.object({
+  type: z.enum(["key", "text"]),
+  var: z.string().min(1),
+  label: z.string().min(1),
+});
+
 export const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
   z.object({
     id: z.string().min(1),
@@ -7,6 +13,7 @@ export const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
     description: z.string().optional(),
     script: z.string().optional(),
     vars: z.record(z.string()).optional(),
+    prompt: PromptSchema.optional(),
     deps: z.array(z.string()).optional(),
     children: z.array(MenuItemSchema).optional(),
     mode: z.enum(["single", "multi", "flow"]).optional(),
@@ -36,6 +43,11 @@ export interface MenuItem {
   description?: string;
   script?: string;
   vars?: Record<string, string>;
+  prompt?: {
+    type: "key" | "text";
+    var: string;
+    label: string;
+  };
   deps?: string[];
   children?: MenuItem[];
   /** Controls how this node's children are selected in generated standalone scripts */
