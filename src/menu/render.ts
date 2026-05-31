@@ -10,7 +10,7 @@ export interface RenderOptions {
 
 /**
  * Render a menu level and get user selection.
- * Returns: { action: "select", ids } | { action: "enter", childIndex } | { action: "back" } | { action: "quit" }
+ * Uses a loop instead of recursion to avoid stack overflow on repeated invalid input.
  */
 export async function renderMenu(
   nodes: MenuItem[],
@@ -23,82 +23,82 @@ export async function renderMenu(
   | { action: "quit" }
   | { action: "confirm" }
 > {
-  // Print breadcrumb
-  if (breadcrumb.length > 0) {
-    console.log(`\n  ${c.breadcrumb(breadcrumb.join(" > "))}`);
-  }
-
-  console.log(`  ${"─".repeat(40)}`);
-
-  // Print menu items
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
-    const num = c.highlight(`[${i + 1}]`);
-    const hasChildren = !isLeaf(node);
-
-    let status = "";
-    if (opts.selected.has(node.id)) {
-      status = c.selected(" ✓");
-    } else if (opts.autoDeps.has(node.id)) {
-      status = c.dep(" (dep)");
+  while (true) {
+    // Print breadcrumb
+    if (breadcrumb.length > 0) {
+      console.log(`\n  ${c.breadcrumb(breadcrumb.join(" > "))}`);
     }
 
-    const arrow = hasChildren ? c.dim(" >") : "";
-    const desc = node.description ? c.dim(` - ${node.description}`) : "";
+    console.log(`  ${"─".repeat(40)}`);
 
-    console.log(`  ${num} ${node.label}${status}${arrow}${desc}`);
-  }
+    // Print menu items
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      const num = c.highlight(`[${i + 1}]`);
+      const hasChildren = !isLeaf(node);
 
-  console.log(`  ${"─".repeat(40)}`);
-  console.log(`  ${c.dim("[0]")} 返回上级  ${c.dim("[q]")} 退出  ${c.dim("[a]")} 全选  ${c.dim("[c]")} 确认生成`);
-  console.log();
+      let status = "";
+      if (opts.selected.has(node.id)) {
+        status = c.selected(" ✓");
+      } else if (opts.autoDeps.has(node.id)) {
+        status = c.dep(" (dep)");
+      }
 
-  const answer = await prompt("  请选择 (数字可逗号分隔多选): ");
+      const arrow = hasChildren ? c.dim(" >") : "";
+      const desc = node.description ? c.dim(` - ${node.description}`) : "";
 
-  const trimmed = answer.trim().toLowerCase();
+      console.log(`  ${num} ${node.label}${status}${arrow}${desc}`);
+    }
 
-  if (trimmed === "q" || trimmed === "quit") return { action: "quit" };
-  if (trimmed === "0") return { action: "back" };
-  if (trimmed === "a") {
-    return { action: "select", ids: nodes.map((n) => n.id) };
-  }
-  if (trimmed === "c" || trimmed === "confirm") return { action: "confirm" };
+    console.log(`  ${"─".repeat(40)}`);
+    console.log(`  ${c.dim("[0]")} 返回上级  ${c.dim("[q]")} 退出  ${c.dim("[a]")} 全选  ${c.dim("[c]")} 确认生成`);
+    console.log();
 
-  // Parse selection: could be "1", "1,3,5", or "1-3"
-  const ids: string[] = [];
-  const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+    const answer = await prompt("  请选择 (数字可逗号分隔多选): ");
+    const trimmed = answer.trim().toLowerCase();
 
-  for (const part of parts) {
-    // Handle range like "1-3"
-    if (part.includes("-")) {
-      const [start, end] = part.split("-").map(Number);
-      if (!isNaN(start) && !isNaN(end)) {
-        for (let i = start; i <= end; i++) {
-          if (i >= 1 && i <= nodes.length) ids.push(nodes[i - 1].id);
+    if (trimmed === "q" || trimmed === "quit") return { action: "quit" };
+    if (trimmed === "0") return { action: "back" };
+    if (trimmed === "a") {
+      return { action: "select", ids: nodes.map((n) => n.id) };
+    }
+    if (trimmed === "c" || trimmed === "confirm") return { action: "confirm" };
+
+    // Parse selection: could be "1", "1,3,5", or "1-3"
+    const ids: string[] = [];
+    const parts = trimmed.split(/[,\s]+/).filter(Boolean);
+
+    for (const part of parts) {
+      if (part.includes("-")) {
+        const [start, end] = part.split("-").map(Number);
+        if (!isNaN(start) && !isNaN(end) && start <= end) {
+          for (let i = start; i <= end; i++) {
+            if (i >= 1 && i <= nodes.length) ids.push(nodes[i - 1].id);
+          }
+        }
+      } else {
+        const num = Number(part);
+        if (!isNaN(num) && num >= 1 && num <= nodes.length) {
+          ids.push(nodes[num - 1].id);
         }
       }
-    } else {
-      const num = Number(part);
-      if (!isNaN(num) && num >= 1 && num <= nodes.length) {
-        ids.push(nodes[num - 1].id);
+    }
+
+    if (ids.length === 0) {
+      console.log(c.warn("  无效选择，请重试"));
+      continue; // loop instead of recursion
+    }
+
+    // If single selection and has children, enter submenu
+    if (ids.length === 1) {
+      const idx = nodes.findIndex((n) => n.id === ids[0]);
+      if (idx >= 0 && !isLeaf(nodes[idx])) {
+        return { action: "enter", childIndex: idx };
       }
     }
-  }
 
-  if (ids.length === 0) {
-    console.log(c.warn("  无效选择，请重试"));
-    return renderMenu(nodes, opts, breadcrumb);
+    return { action: "select", ids };
   }
-
-  // If single selection and has children, enter submenu
-  if (ids.length === 1) {
-    const idx = nodes.findIndex((n) => n.id === ids[0]);
-    if (idx >= 0 && !isLeaf(nodes[idx])) {
-      return { action: "enter", childIndex: idx };
-    }
-  }
-
-  return { action: "select", ids };
 }
 
 function prompt(question: string): Promise<string> {
@@ -106,8 +106,17 @@ function prompt(question: string): Promise<string> {
     input: process.stdin,
     output: process.stdout,
   });
+
+  const cleanup = () => {
+    rl.close();
+  };
+  process.once("SIGINT", cleanup);
+  process.once("SIGTERM", cleanup);
+
   return new Promise((resolve) => {
     rl.question(question, (answer) => {
+      process.off("SIGINT", cleanup);
+      process.off("SIGTERM", cleanup);
       rl.close();
       resolve(answer);
     });

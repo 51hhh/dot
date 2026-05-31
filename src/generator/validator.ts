@@ -14,8 +14,12 @@ export function validateScript(content: string): string | null {
     fs.writeFileSync(tmpFile, content, "utf-8");
     execFileSync("bash", ["-n", tmpFile], { encoding: "utf-8", stdio: "pipe" });
     return null;
-  } catch (err: any) {
-    return err.stderr?.trim() ?? err.message;
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "stderr" in err) {
+      const e = err as { stderr?: string; message?: string };
+      return e.stderr?.trim() ?? e.message ?? "validation failed";
+    }
+    return err instanceof Error ? err.message : "validation failed";
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true });
