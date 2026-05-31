@@ -48,11 +48,15 @@ menu:
             deps: ["tmux-header"]
           - id: "tmux-prefix-custom"
             label: "自定义前缀键"
-            description: "自定义你喜欢的前缀键"
+            description: "录制你喜欢的 Tmux 前缀键"
             script: "../templates/tmux/prefix-custom.sh"
             deps: ["tmux-header"]
             vars:
               custom_prefix: "C-x"
+            prompt:
+              type: "key"
+              var: "custom_prefix"
+              label: "请直接按下你想要的 Tmux 前缀组合键"
 
       # ── 插件管理 ──
       - id: "tmux-plugins"

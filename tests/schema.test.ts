@@ -46,7 +46,7 @@ describe("ConfigSchema", () => {
           mode: "flow",
           children: [
             { id: "tmux-install", label: "Install", mode: "single", children: [{ id: "apt", label: "apt" }] },
-            { id: "tmux-header", label: "Header", hidden: true },
+            { id: "tmux-header", label: "Header", hidden: true, prompt: { type: "key", var: "custom_prefix", label: "Record key" } },
           ],
         },
       ],
@@ -54,6 +54,7 @@ describe("ConfigSchema", () => {
     expect(result.menuMode).toBe("single");
     expect(result.menu[0].mode).toBe("flow");
     expect(result.menu[0].children?.[1].hidden).toBe(true);
+    expect(result.menu[0].children?.[1].prompt?.type).toBe("key");
   });
 
   it("rejects empty name", () => {
