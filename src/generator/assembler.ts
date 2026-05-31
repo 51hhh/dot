@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Config } from "../loader/schema.js";
+import type { Config, MenuItem } from "../loader/schema.js";
 import { flattenNodes, topoSort } from "../utils/deps.js";
 import { loadTemplate } from "./template.js";
 
@@ -7,6 +7,10 @@ export interface AssembleOptions {
   config: Config;
   configPath: string;
   selectedIds: Set<string>;
+  /** Pre-computed flat node map (avoids redundant flattenNodes calls) */
+  allNodes?: Map<string, MenuItem>;
+  /** If provided, collects warnings (e.g. unresolved template variables) */
+  warnings?: string[];
 }
 
 /**
@@ -14,7 +18,7 @@ export interface AssembleOptions {
  */
 export function assemble(opts: AssembleOptions): string {
   const { config, configPath, selectedIds } = opts;
-  const allNodes = flattenNodes(config.menu);
+  const allNodes = opts.allNodes ?? flattenNodes(config.menu);
   const configDir = path.dirname(path.resolve(configPath));
 
   // Topological sort for correct dependency order
@@ -39,6 +43,7 @@ export function assemble(opts: AssembleOptions): string {
   }
 
   // Render script sections
+  const unresolved = new Set<string>();
   const renderSection = (id: string) => {
     const node = allNodes.get(id)!;
     if (!node.script) return;
@@ -48,7 +53,7 @@ export function assemble(opts: AssembleOptions): string {
       : path.resolve(configDir, node.script);
 
     const mergedVars = { ...config.vars, ...node.vars };
-    const scriptContent = loadTemplate(scriptPath, mergedVars);
+    const scriptContent = loadTemplate(scriptPath, mergedVars, unresolved);
 
     sections.push(`# ─── ${node.label} (${node.id}) ───`);
     sections.push(scriptContent);
@@ -60,6 +65,11 @@ export function assemble(opts: AssembleOptions): string {
 
   // Footer
   sections.push(generateFooter(config));
+
+  // Collect warnings
+  if (unresolved.size > 0 && opts.warnings) {
+    opts.warnings.push(`Unresolved template variables: ${[...unresolved].join(", ")}`);
+  }
 
   return sections.join("\n");
 }
@@ -97,13 +107,6 @@ log_info()  { echo -e "\${CYAN}[INFO]\${NC}  \$*"; }
 log_ok()    { echo -e "\${GREEN}[OK]\${NC}    \$*"; }
 log_warn()  { echo -e "\${YELLOW}[WARN]\${NC}  \$*"; }
 log_error() { echo -e "\${RED}[ERROR]\${NC} \$*"; }
-
-check_root() {
-  if [ "\$(id -u)" -ne 0 ]; then
-    log_error "请使用 root 或 sudo 运行此脚本"
-    exit 1
-  fi
-}
 
 `;
 }

@@ -1,0 +1,12 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "backend/generator spec index"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "error-handling review criteria"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "required quality checks and review checklist"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "stdout/stderr and generated bash logging review criteria"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "terminal UI spec index"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "terminal UI/generated TUI quality review criteria"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "selection/prompt/execution state review criteria"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "config/menu type safety review criteria"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/research/bash-tui-patterns.md", "reason": "bash TUI constraints for review"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/research/execution-patterns.md", "reason": "execution model constraints for review"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/architecture.md", "reason": "architecture requirements to verify"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/quality-plan.md", "reason": "quality plan to enforce"}

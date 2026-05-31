@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "backend/generator spec index and checklist"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "module boundaries for TypeScript generator changes"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "CLI/generator and generated bash error-handling conventions"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "required checks and generator quality rules"}
+{"file": ".trellis/spec/backend/logging-guidelines.md", "reason": "CLI and generated bash output conventions"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "terminal UI/generated TUI spec index"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "terminal UI helper patterns for generated bash TUI"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "selection/prompt/execution state conventions"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "menu/config data shape and validation conventions"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "terminal UI quality requirements"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/research/bash-tui-patterns.md", "reason": "pure bash TUI implementation patterns"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/research/execution-patterns.md", "reason": "collect-before-execute and concatenated execution pattern research"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/architecture.md", "reason": "TS-to-shell architecture design for MVP"}
+{"file": ".trellis/tasks/05-30-brainstorm-arch/quality-plan.md", "reason": "MVP verification and Docker smoke-test plan"}
