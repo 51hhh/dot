@@ -180,6 +180,101 @@ dot_key_to_tmux() {
   esac
 }
 
+
+dot_choose_from_array() {
+  local title="$1" subtitle="$2" result_var="$3"
+  shift 3
+  local options=("$@")
+  local selected=0 key i pointer desc
+
+  while true; do
+    dot_render_header "$title" "$subtitle"
+    printf '%s\n' "────────────────────────────────────────"
+    for i in "@{!options[@]}"; do
+      pointer=" "
+      if [[ "$i" -eq "$selected" ]]; then pointer="@{CYAN}>@{NC}"; fi
+      printf " %b %s\n" "$pointer" "@{options[$i]}"
+    done
+    printf '%s\n' "────────────────────────────────────────"
+    printf "%b↑/↓%b 选择  %bEnter%b 确认  %bb/←%b 返回\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC"
+
+    key="$(dot_read_key)" || return 1
+    case "$key" in
+      $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
+      $'\\e[B') if [[ "$selected" -lt $((@{#options[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
+      $'\\e[D'|b|B) return 2 ;;
+      "") printf -v "$result_var" '%s' "@{options[$selected]}"; return 0 ;;
+    esac
+  done
+}
+
+dot_modifier_to_tmux_prefix() {
+  case "$1" in
+    Ctrl) printf 'C' ;;
+    Alt/Meta) printf 'M' ;;
+    *) return 1 ;;
+  esac
+}
+
+dot_key_name_to_tmux_suffix() {
+  case "$1" in
+    Space) printf 'Space' ;;
+    Enter) printf 'Enter' ;;
+    Escape) printf 'Escape' ;;
+    Tab) printf 'Tab' ;;
+    Backslash) printf '\\' ;;
+    *) printf '%s' "$1" ;;
+  esac
+}
+
+dot_compose_tmux_key_prompt() {
+  local item="$1" var="@{DOT_PROMPT_VARS[$item]:-}"
+  local modifier key_name prefix suffix value confirm
+  local modifiers=("Ctrl" "Alt/Meta")
+  local keys=(
+    "a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m"
+    "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"
+    "0" "1" "2" "3" "4" "5" "6" "7" "8" "9"
+    "Space" "Enter" "Escape" "Tab" "Backslash" "[" "]" "-" "=" "/" "." "," ";" "'"
+  )
+
+  while true; do
+    dot_choose_from_array "@{DOT_LABELS[$item]} > 选择特殊键" "先选择修饰键" modifier "@{modifiers[@]}"
+    case "$?" in
+      0) ;;
+      2) return 2 ;;
+      *) return 1 ;;
+    esac
+
+    dot_choose_from_array "@{DOT_LABELS[$item]} > 选择普通按键" "当前特殊键：$modifier" key_name "@{keys[@]}"
+    case "$?" in
+      0) ;;
+      2) continue ;;
+      *) return 1 ;;
+    esac
+
+    prefix="$(dot_modifier_to_tmux_prefix "$modifier")" || return 1
+    suffix="$(dot_key_name_to_tmux_suffix "$key_name")" || return 1
+    value="@{prefix}-@{suffix}"
+
+    dot_render_header "@{DOT_LABELS[$item]}" "手动组合按键"
+    printf '%s\n' "────────────────────────────────────────"
+    printf "组合结果：%b%s%b\n\n" "$GREEN" "$value" "$NC"
+    printf "Enter 确认，r 重新组合，b 返回录制："
+    confirm="$(dot_read_key)" || return 1
+    case "$confirm" in
+      "")
+        if [[ -n "$var" ]]; then
+          DOT_VARS[$var]="$value"
+        fi
+        return 0
+        ;;
+      r|R) continue ;;
+      b|B) return 2 ;;
+    esac
+  done
+}
+
 dot_record_key_prompt() {
   local item="$1"
   local var="@{DOT_PROMPT_VARS[$item]:-}"
@@ -194,12 +289,20 @@ dot_record_key_prompt() {
     if [[ "$key" == "b" || "$key" == "B" ]]; then
       return 2
     fi
+    if [[ "$key" == "m" || "$key" == "M" ]]; then
+      dot_compose_tmux_key_prompt "$item"
+      case "$?" in
+        0) return 0 ;;
+        2) continue ;;
+        *) return 1 ;;
+      esac
+    fi
     value="$(dot_key_to_tmux "$key")"
 
     dot_render_header "@{DOT_LABELS[$item]}" "$label"
     printf '%s\n' "────────────────────────────────────────"
     printf "录制结果：%b%s%b\n\n" "$GREEN" "$value" "$NC"
-    printf "Enter 确认，r 重新录制，b 返回："
+    printf "Enter 确认，r 重新录制，m 手动组合，b 返回："
     key="$(dot_read_key)" || return 1
     case "$key" in
       "")
@@ -209,6 +312,14 @@ dot_record_key_prompt() {
         return 0
         ;;
       r|R) continue ;;
+      m|M)
+        dot_compose_tmux_key_prompt "$item"
+        case "$?" in
+          0) return 0 ;;
+          2) continue ;;
+          *) return 1 ;;
+        esac
+        ;;
       b|B) return 2 ;;
     esac
   done
