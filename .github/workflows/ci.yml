@@ -1,0 +1,52 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build package
+        run: npm run build
+
+      - name: Generate release artifact
+        run: node dist/index.js build --config configs/dot.yaml --output dist/dot.sh --quiet
+
+      - name: Validate generated script syntax
+        run: bash -n dist/dot.sh
+
+      - name: Smoke test generated dry-run plan
+        run: bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize
+
+      - name: Upload generated script
+        uses: actions/upload-artifact@v4
+        with:
+          name: dot-sh
+          path: dist/dot.sh
+          if-no-files-found: error

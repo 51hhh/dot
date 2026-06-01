@@ -1,100 +1,239 @@
 # dot
 
-交互式系统配置脚本生成框架。通过 YAML 定义菜单树，数字选择交互，自动生成完整的 `.sh` 配置脚本。
+`dot` is a TypeScript CLI for turning YAML/JSON installation menus into an
+inspectable plan and a self-contained interactive Bash installer.
 
-## 特性
+The current flow is:
 
-- 任意层级嵌套菜单（YAML 定义）
-- 数字选择 + 多选 + 范围选择（如 `1,3,5` 或 `1-3`）
-- 依赖自动解析 + 拓扑排序
-- `{{variable}}` 模板变量替换
-- `bash -n` 语法校验
-- 生成可直接 `wget` 运行的完整 `.sh` 脚本
+```text
+Config -> Overlay -> Plan -> Build
+```
 
-## 快速开始
+- **Config**: a YAML/JSON menu graph defines labels, modes, prompts,
+  dependencies, post steps, variables, and shell snippet paths.
+- **Overlay**: an optional sidecar `.plan.json` next to the config can adjust
+  presentation-safe plan fields without changing snippet source.
+- **Plan**: `dot plan` renders the resolved graph and execution order for review
+  or Studio input.
+- **Build**: `dot build` writes `dist/dot.sh`, a single Bash script that can run
+  without Node.js, npm, project configs, or template files.
+
+## Quick Start
 
 ```bash
 npm install
 npm run build
-node dist/index.js --config configs/example.yaml
+node dist/index.js plan --config configs/dot.yaml
+node dist/index.js build --config configs/dot.yaml --output dist/dot.sh
+bash dist/dot.sh
 ```
 
-## 配置文件格式
+During package use, the CLI binary is `dot`:
+
+```bash
+dot plan --config configs/dot.yaml
+dot build --config configs/dot.yaml --output dist/dot.sh
+dot studio --config configs/dot.yaml
+```
+
+## Main Commands
+
+### `dot build`
+
+Builds the user-facing release artifact.
+
+```bash
+dot build --config configs/dot.yaml --output dist/dot.sh --quiet
+```
+
+- `--config <path>` is required and accepts YAML or JSON.
+- `--output <path>` defaults to `dist/dot.sh`, resolved from the current working
+  directory.
+- If a matching sidecar overlay exists, such as `configs/dot.plan.json`, it is
+  loaded before generation.
+- The generated script is validated with `bash -n` before the command succeeds.
+- The output file is executable and self-contained.
+
+### `dot plan`
+
+Renders the resolved installation plan.
+
+```bash
+dot plan --config configs/dot.yaml
+dot plan --config configs/dot.yaml --format json
+dot plan --config configs/dot.yaml --format json --write dist/installation-plan.json
+```
+
+Text output is for humans. JSON output is for tooling, Studio, and plan review.
+
+### `dot studio`
+
+Starts the local Plan Canvas.
+
+```bash
+dot studio --config configs/dot.yaml --port 5177
+```
+
+Studio visualizes the plan graph and writes sidecar overlay data such as node
+positions, disabled nodes, and safe display/execution overrides.
+
+### Legacy `generate`
+
+The older interactive generator path still exists as a hidden compatibility
+command. New release work should prefer `dot build` and `dist/dot.sh`.
+
+## Config Files
+
+Minimal config shape:
 
 ```yaml
-name: "我的配置"
+name: "dot installer"
 version: "1.0"
-description: "一键配置开发环境"
+description: "Choose tools to install"
+menuMode: "single"
 
 output:
-  filename: "setup.sh"
+  filename: "dot.sh"
   dir: "dist"
 
 vars:
   global_var: "value"
 
 menu:
-  - id: "category"
-    label: "分类名称"
+  - id: "tmux"
+    label: "Tmux"
+    mode: "flow"
     children:
-      - id: "tool-a"
-        label: "安装工具 A"
-        description: "工具 A 的说明"
-        script: "templates/tool-a.sh"  # 相对于配置文件所在目录
-        deps: ["tool-b"]
-        vars:
-          version: "1.0"
-      - id: "tool-b"
-        label: "安装工具 B"
-        script: "templates/tool-b.sh"
+      - id: "tmux-install"
+        label: "Install tmux"
+        script: "../templates/tmux/install-apt.sh"
+      - id: "tmux-configure"
+        label: "Configure tmux"
+        script: "../templates/tmux/header.sh"
+        deps: ["tmux-install"]
+      - id: "tmux-final-notes"
+        label: "Final notes"
+        script: "../templates/tmux/final-notes.sh"
+        post: true
 ```
 
-### 字段说明
+Important fields:
 
-| 字段 | 必填 | 说明 |
-|------|------|------|
-| `id` | 是 | 唯一标识 |
-| `label` | 是 | 菜单显示文本 |
-| `description` | 否 | 菜单项描述 |
-| `script` | 否 | 模板脚本路径，相对于配置文件所在目录（叶子节点） |
-| `deps` | 否 | 依赖项 id 列表 |
-| `vars` | 否 | 模板变量，覆盖全局变量 |
-| `children` | 否 | 子菜单（支持任意嵌套） |
-| `post` | 否 | 设为 `true` 时，此节点会在所有非 post 节点之后执行（如 TPM init） |
+| Field | Required | Description |
+| --- | --- | --- |
+| `id` | yes | Stable unique id. Keep ids shell-safe: letters, digits, `_`, and `-`. |
+| `label` | yes | Menu and plan display text. |
+| `description` | no | Additional display text. |
+| `script` | no | Shell snippet path, resolved relative to the config file. |
+| `vars` | no | Template variables for `{{variable}}` replacement. |
+| `deps` | no | Other ids that must run before this node. |
+| `children` | no | Nested menu items. |
+| `mode` | no | Child selection mode: `single`, `multi`, or `flow`. |
+| `prompt` | no | Runtime prompt used by generated installers. |
+| `hidden` | no | Hide from menus while still allowing dependency participation. |
+| `post` | no | Run after normal non-post steps. |
+| `endFlow` | no | End the containing flow and continue to plan preview. |
 
-## CLI 参数
-
-```
-dot --config <path>       # 配置文件路径 (YAML/JSON)
-    --output <path>       # 输出脚本路径（覆盖配置中的 output）
-    --select <ids...>     # 预选菜单项 id（跳过交互式菜单）
-    --dry-run             # 打印到 stdout，不写文件
-    --quiet               # 抑制 banner 和选择输出（适合脚本调用）
-```
-
-## 模板语法
-
-脚本模板中使用 `{{variable}}` 插入变量：
+Template snippets can use defaults:
 
 ```bash
 echo "Installing version {{version:latest}}"
 ```
 
-`:` 后为默认值，当变量未定义时使用。
+## Sidecar Plan Overlays
 
-## 项目结构
+For a config file `configs/dot.yaml`, the sidecar overlay path is
+`configs/dot.plan.json`.
 
+```json
+{
+  "version": 1,
+  "positions": {
+    "tmux": { "x": 120, "y": 80 }
+  },
+  "disabled": ["tmux-plugin-dracula"],
+  "overrides": {
+    "tmux-install": {
+      "label": "Install Tmux",
+      "hidden": false,
+      "mode": "single"
+    }
+  }
+}
 ```
-dot/
-├── src/                    # TypeScript 源码
-│   ├── index.ts            # CLI 入口
-│   ├── loader/             # 配置加载 + Schema 校验
-│   ├── menu/               # 菜单渲染 + 导航
-│   ├── generator/          # 脚本拼装 + 模板 + 校验
-│   └── utils/              # 依赖解析 + 终端颜色
-├── configs/                # 配置文件
-├── templates/              # Shell 模板片段
-└── dist/                   # 编译产物 + 生成脚本
+
+Overlay rules:
+
+- `positions` are Studio-only and do not affect build output.
+- `overrides` may affect only `label`, `description`, `hidden`, `post`, and
+  non-root `mode`.
+- `disabled` forces matching config nodes to `hidden: true` and wins over
+  `hidden: false`.
+- Unsafe fields such as `script`, `deps`, and `vars` are ignored at the overlay
+  boundary.
+- The merged config is validated again before build output is written.
+
+## Project Structure
+
+```text
+src/
+├── index.ts          # CLI entry point and command wiring
+├── loader/           # Config parsing, Zod schema, semantic validation
+├── utils/            # Graph/dependency helpers
+├── generator/        # Template rendering, standalone Bash assembly, validation
+├── menu/             # Legacy developer-side interactive menu
+├── planner/          # InstallationPlan graph, overlays, renderers
+└── studio/           # React Flow Plan Canvas and local server
+
+configs/              # Example YAML configs
+templates/            # Shell snippets referenced by configs
+docs/                 # Architecture and release notes
+dist/                 # Built CLI and generated dot.sh artifact
+```
+
+See [docs/architecture.md](docs/architecture.md) and
+[docs/release.md](docs/release.md) for more detail.
+
+## Development Checks
+
+Use the full quality gate before reporting code changes complete:
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+bash -n dist/dot.sh
+```
+
+When generated runtime behavior changes, also run the Docker smoke test when the
+environment supports it:
+
+```bash
+npm run test:docker
+```
+
+For docs-only changes, at minimum check that documented commands still match the
+CLI and `package.json` scripts.
+
+## Release Artifact
+
+The release artifact for users is `dist/dot.sh`.
+
+Recommended release build:
+
+```bash
+npm install
+npm run build
+node dist/index.js build --config configs/dot.yaml --output dist/dot.sh --quiet
+bash -n dist/dot.sh
+```
+
+Publish or attach `dist/dot.sh` as the downloadable installer. Users should be
+able to run it with:
+
+```bash
+bash dist/dot.sh
 ```
 
 ## License
