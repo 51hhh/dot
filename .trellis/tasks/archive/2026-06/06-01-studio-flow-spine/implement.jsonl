@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Studio UI and generated terminal/frontend layer guidance"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Plan Canvas component and layout conventions"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "InstallationPlan edge contracts and Studio graph semantics"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Selection, dependency visibility, and generated/runtime state patterns"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Required checks for Studio UI changes"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Project-wide verification commands and generated script checks"}

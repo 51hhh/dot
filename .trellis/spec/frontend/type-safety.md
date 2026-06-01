@@ -118,6 +118,86 @@ for (const child of flow.children) {
 }
 ```
 
+## Scenario: Studio flow spine projection contract
+
+### 1. Scope / Trigger
+
+- Trigger: changing Plan Canvas layout, visible structure projection, dependency visibility, or nested flow expansion.
+- Applies to `src/studio/projection.ts`, `src/studio/main.tsx`, `src/studio/studio.css`, and `tests/studio.test.ts`.
+
+### 2. Signatures
+
+```ts
+export function buildStudioGraph(
+  plan: InstallationPlan,
+  options?: {
+    showDependencies?: boolean;
+    expandedNodeIds?: ReadonlySet<string>;
+  }
+): StudioGraph;
+```
+
+### 3. Contracts
+
+- `InstallationPlan` remains the semantic source of truth; Studio may project it into a display-specific graph without changing generator behavior.
+- Primary `flow` chains render as horizontal spines.
+- `single` children render as real visible draggable nodes in a local lane near their parent, connected by visible `single` edges.
+- `multi` children render as real visible draggable nodes in a local lane near their parent, connected by visible `multi` edges.
+- Post children render as real visible draggable nodes near their owning step, connected by visible `post` edges, but they do not enter or advance the main flow spine.
+- Dependency edges are hidden by default and only appear when `showDependencies` is enabled.
+- Collapsed nested-flow dependency endpoints are mapped to their visible owner node when dependencies are shown.
+- Nested flows such as `tmux-plugins` are collapsed by default and expand only when their id is present in `expandedNodeIds`.
+- Expanded nested-flow nodes and their single/multi/post children render as real visible draggable nodes and edges.
+- Studio nodes must keep `targetPosition: Position.Left` and `sourcePosition: Position.Right`.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| Real tmux plan is projected | `primarySpines.tmux` is the seven visible tmux macro steps |
+| Single/multi children exist under a visible step | Children appear as projected nodes and visible `single` / `multi` edges |
+| `showDependencies` is false or omitted | No projected edge has `type === "dependency"` |
+| `showDependencies` is true | Dependency edges are dashed/low emphasis and connect visible owner nodes |
+| Flow child has its own local flow | It is collapsed by default and represented by `data.nestedFlow` |
+| Flow child is expanded | Its local flow nodes render below/near the parent with `nested: true` edges |
+| Post children exist under a step | They appear as projected nodes and visible `post` edges, outside `primarySpines` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `tmux -> tmux-install -> tmux-github-mirror -> tmux-prefix -> tmux-plugins -> tmux-status -> tmux-options -> tmux-finalize` reads as one horizontal spine.
+- Base: `tmux-prefix` displays Ctrl+A/Ctrl+B/custom choices as draggable option nodes near the prefix step.
+- Base: `tmux-options` displays option choices as draggable option nodes near the options step.
+- Base: `tmux-plugins` shows a collapsed nested-flow summary until expanded.
+- Bad: dependency edges are visible by default and cross the main canvas.
+- Bad: single/multi choices are compacted into text-only card data.
+- Bad: post nodes create normal flow branches that suggest they run before the next macro step.
+
+### 6. Tests Required
+
+- Studio projection test: real tmux primary spine is the seven macro steps.
+- Studio projection test: single/multi options render as visible nodes with typed edges.
+- Studio projection test: dependencies are hidden by default and toggled on explicitly.
+- Studio projection test: nested `tmux-plugins` flow is collapsed by default and expands locally.
+- Studio projection test: post nodes render visibly but stay out of the main spine.
+- Build check: `npm run build` must still produce the Studio bundle.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+setEdges(plan.edges.map(edgeToReactFlowEdge));
+setNodes(Object.values(plan.nodes).map(planNodeToReactFlowNode));
+```
+
+#### Correct
+
+```ts
+const graph = buildStudioGraph(plan, { showDependencies, expandedNodeIds });
+setNodes(graph.nodes.map(projectedNodeToReactFlowNode));
+setEdges(graph.edges.map(projectedEdgeToReactFlowEdge));
+```
+
 ## Scenario: Generated prompt type contract
 
 ### 1. Scope / Trigger
