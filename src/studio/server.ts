@@ -2,21 +2,28 @@ import fs from "node:fs";
 import http from "node:http";
 import path from "node:path";
 import { loadConfig } from "../loader/loader.js";
-import { buildInstallationPlan } from "../planner/index.js";
+import { resolveInstallationPlanFromConfig } from "../planner/index.js";
 import {
-  applyPlanOverlay,
   loadPlanOverlay,
+  mergePlanOverlay,
+  parsePlanOverlayPayload,
+  PlanOverlayValidationError,
   planOverlayPathForConfig,
   savePlanOverlay,
-  type PlanOverlay,
 } from "../planner/overlay.js";
 
+const MAX_PLAN_PATCH_BODY_BYTES = 256 * 1024;
+
 export async function startStudio(opts: { configPath: string; port: number }) {
-  const config = loadConfig(opts.configPath);
-  const basePlan = buildInstallationPlan(config);
+  const loadedConfig = loadConfig(opts.configPath);
   const planPath = planOverlayPathForConfig(opts.configPath);
   let currentOverlay = loadPlanOverlay(planPath);
-  let currentPlan = currentOverlay ? applyPlanOverlay(basePlan, currentOverlay) : basePlan;
+  let currentPlan = resolveInstallationPlanFromConfig({
+    configPath: opts.configPath,
+    overlayPath: planPath,
+    loadedConfig,
+    overlay: currentOverlay,
+  }).plan;
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -28,27 +35,83 @@ export async function startStudio(opts: { configPath: string; port: number }) {
     }
 
     if (url.pathname === "/api/plan" && req.method === "PUT") {
-      let body = "";
+      let bodyBytes = 0;
+      const bodyChunks: Buffer[] = [];
+      let oversized = false;
+
       req.on("data", (chunk) => {
-        body += chunk;
+        const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        bodyBytes += buffer.byteLength;
+
+        if (bodyBytes > MAX_PLAN_PATCH_BODY_BYTES) {
+          oversized = true;
+          bodyChunks.length = 0;
+          return;
+        }
+
+        bodyChunks.push(buffer);
       });
       req.on("end", () => {
-        const payload = JSON.parse(body) as { patch: PlanOverlay };
-        const nextOverlay: PlanOverlay = currentOverlay ?? { version: 1 };
-        nextOverlay.positions = {
-          ...(nextOverlay.positions ?? {}),
-          ...(payload.patch.positions ?? {}),
-        };
-        nextOverlay.disabled = [...new Set([...(nextOverlay.disabled ?? []), ...(payload.patch.disabled ?? [])])];
-        nextOverlay.overrides = {
-          ...(nextOverlay.overrides ?? {}),
-          ...(payload.patch.overrides ?? {}),
-        };
+        if (oversized) {
+          writeJsonError(res, 413, "body_too_large", `Request body must be ${MAX_PLAN_PATCH_BODY_BYTES} bytes or smaller.`);
+          return;
+        }
+
+        let rawPayload: unknown;
+
+        try {
+          rawPayload = JSON.parse(Buffer.concat(bodyChunks).toString("utf-8"));
+        } catch {
+          writeJsonError(res, 400, "invalid_json", "Request body must be valid JSON.");
+          return;
+        }
+
+        let patch;
+        try {
+          patch = parsePlanOverlayPayload(rawPayload);
+        } catch (err: unknown) {
+          if (err instanceof PlanOverlayValidationError) {
+            const statusCode = err.code === "missing_patch" ? 400 : 422;
+            writeJsonError(res, statusCode, err.code, err.message, { issues: err.issues });
+            return;
+          }
+          writeJsonError(res, 500, "invalid_overlay", "Failed to validate plan overlay patch.", { detail: errorMessage(err) });
+          return;
+        }
+
+        const nextOverlay = mergePlanOverlay(currentOverlay, patch);
+        let nextPlan;
+        try {
+          nextPlan = resolveInstallationPlanFromConfig({
+            configPath: opts.configPath,
+            overlayPath: planPath,
+            loadedConfig,
+            overlay: nextOverlay,
+          }).plan;
+        } catch (err: unknown) {
+          writeJsonError(res, 422, "invalid_overlay", "Plan overlay patch could not be applied.", { detail: errorMessage(err) });
+          return;
+        }
+
+        try {
+          savePlanOverlay(planPath, nextOverlay);
+        } catch (err: unknown) {
+          writeJsonError(res, 500, "save_failed", "Failed to save plan overlay.", { detail: errorMessage(err) });
+          return;
+        }
+
         currentOverlay = nextOverlay;
-        currentPlan = applyPlanOverlay(basePlan, nextOverlay);
-        savePlanOverlay(planPath, nextOverlay);
+        currentPlan = nextPlan;
         res.statusCode = 204;
         res.end();
+      });
+      req.on("error", () => {
+        if (oversized) {
+          writeJsonError(res, 413, "body_too_large", `Request body must be ${MAX_PLAN_PATCH_BODY_BYTES} bytes or smaller.`);
+          return;
+        }
+
+        writeJsonError(res, 400, "read_failed", "Failed to read request body.");
       });
       return;
     }
@@ -87,6 +150,23 @@ export async function startStudio(opts: { configPath: string; port: number }) {
       server.close((err) => (err ? reject(err) : resolve()));
     }),
   };
+}
+
+function writeJsonError(
+  res: http.ServerResponse,
+  statusCode: number,
+  code: string,
+  message: string,
+  extra: Record<string, unknown> = {}
+): void {
+  if (res.headersSent) return;
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify({ error: { code, message, ...extra } }));
+}
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 function renderStudioHtml() {

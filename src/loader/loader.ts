@@ -26,7 +26,7 @@ export function loadConfig(configPath: string): Config {
   return config;
 }
 
-function validateConfigSemantics(config: Config): void {
+export function validateConfigSemantics(config: Config): void {
   const allNodes = new Map<string, MenuItem>();
 
   // Collect all nodes and check for duplicate IDs
