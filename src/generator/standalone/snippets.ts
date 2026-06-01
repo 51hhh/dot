@@ -1,8 +1,7 @@
-import path from "node:path";
 import fs from "node:fs";
 import type { Config, MenuItem } from "../../loader/schema.js";
 import type { InstallationPlan } from "../../planner/types.js";
-import { loadTemplate } from "../template.js";
+import { loadTemplate, resolveTemplatePath } from "../template.js";
 import { bashQuote } from "./ids.js";
 import { planNodeFor } from "./nodes.js";
 
@@ -30,9 +29,7 @@ export function renderSnippetFunctions({
     const buildNode = planNodeFor(id, plan, node);
     if (!func || !buildNode.script) continue;
 
-    const scriptPath = path.isAbsolute(buildNode.script)
-      ? buildNode.script
-      : path.resolve(configDir, buildNode.script);
+    const scriptPath = resolveTemplatePath(buildNode.script, configDir);
     const mergedVars = { ...config.vars, ...node.vars };
     const rawScriptContent = fs.readFileSync(scriptPath, "utf-8");
     let scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();

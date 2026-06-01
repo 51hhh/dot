@@ -142,6 +142,50 @@ describe("assemble", () => {
     fs.rmSync(dir, { recursive: true });
   });
 
+  it("rejects template paths outside the config directory or sibling templates root", () => {
+    const dir = tmpDir();
+    const secretDir = tmpDir();
+    const secretPath = writeTmpFile(secretDir, "secret.sh", "echo secret");
+
+    try {
+      const config: Config = {
+        name: "T",
+        version: "1.0",
+        output: { filename: "o.sh", dir },
+        menu: [{ id: "a", label: "A", script: secretPath }],
+      };
+
+      expect(() =>
+        assemble({ config, configPath: path.join(dir, "c.yaml"), selectedIds: new Set(["a"]) })
+      ).toThrow(/Template path rejected/);
+      expect(() => assembleStandalone({ config, configPath: path.join(dir, "c.yaml") })).toThrow(
+        /Template path rejected/
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+      fs.rmSync(secretDir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows template paths under the config directory", () => {
+    const dir = tmpDir();
+    const scriptPath = writeTmpFile(dir, "local.sh", "echo local");
+
+    try {
+      const config: Config = {
+        name: "T",
+        version: "1.0",
+        output: { filename: "o.sh", dir },
+        menu: [{ id: "a", label: "A", script: scriptPath }],
+      };
+
+      const result = assembleStandalone({ config, configPath: path.join(dir, "c.yaml") });
+      expect(result).toContain("echo local");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("node vars override global vars", () => {
     const dir = tmpDir();
     writeTmpFile(dir, "t.sh", 'echo "{{x}}"');
@@ -322,6 +366,28 @@ describe("assembleStandalone", () => {
     expectBashSyntaxValid(result);
 
     fs.rmSync(dir, { recursive: true });
+  });
+
+  it("keeps normal header metadata readable and shell-safe", () => {
+    const dir = tmpDir();
+    const scriptPath = writeTmpFile(dir, "a.sh", "echo standalone");
+
+    try {
+      const config: Config = {
+        name: "dot 安装器",
+        version: "1.0",
+        description: "Self-contained installer",
+        output: { filename: "dot.sh", dir },
+        menu: [{ id: "a", label: "A", script: scriptPath }],
+      };
+
+      const result = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      expect(result).toContain("#  dot 安装器 v1.0");
+      expect(result).toContain("#  Self-contained installer");
+      expectBashSyntaxValid(result);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("generates shell-safe function names", () => {
