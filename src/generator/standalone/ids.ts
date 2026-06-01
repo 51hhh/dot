@@ -1,3 +1,5 @@
+import { isShellSafeMenuId } from "../../loader/schema.js";
+
 export const ROOT_ID = "__root";
 
 export function bashFunctionNameForId(id: string): string {
@@ -6,7 +8,7 @@ export function bashFunctionNameForId(id: string): string {
 }
 
 export function assertShellSafeId(id: string): void {
-  if (!/^[A-Za-z0-9_-]+$/.test(id)) {
+  if (!isShellSafeMenuId(id)) {
     throw new Error(`Menu item id "${id}" is not shell-safe. Use only letters, digits, "_", and "-".`);
   }
 }

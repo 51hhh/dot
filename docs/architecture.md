@@ -15,8 +15,11 @@ Config files live under `configs/` and are loaded from YAML or JSON. The loader
 owns structural parsing, Zod validation, and semantic checks such as duplicate
 ids, unknown dependencies, and invalid post-step relationships.
 
-Shell snippets referenced by `script` fields are resolved relative to the config
-file, not from the process working directory.
+Shell snippets referenced by `script` fields are trusted executable inputs. They
+are resolved relative to the config file, not from the process working
+directory, and must stay under the config directory or the sibling `templates/`
+root. This preserves local fixture configs while preventing a config from
+embedding arbitrary readable files into generated scripts.
 
 ### Overlay
 
@@ -103,6 +106,7 @@ Node-driven interactive generator. New release work should use `build`.
   shell syntax.
 - Re-run config semantic validation after applying build-relevant overlay data.
 - Keep generated Bash ids and function names shell-safe.
+- Treat `script` paths as trusted template references, not user data.
 - Keep generated `dot.sh` self-contained.
 - Do not duplicate dependency resolution or topological sorting logic in
   unrelated modules.

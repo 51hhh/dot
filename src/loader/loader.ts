@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
-import { ConfigSchema, type Config, type MenuItem } from "./schema.js";
+import { ConfigSchema, isShellSafeMenuId, type Config, type MenuItem } from "./schema.js";
 
 export function loadConfig(configPath: string): Config {
   const resolved = path.resolve(configPath);
@@ -32,6 +32,11 @@ export function validateConfigSemantics(config: Config): void {
   // Collect all nodes and check for duplicate IDs
   function walk(items: MenuItem[]) {
     for (const item of items) {
+      if (!isShellSafeMenuId(item.id)) {
+        throw new Error(
+          `Menu item id "${item.id}" is not shell-safe. Use only letters, digits, "_", and "-".`
+        );
+      }
       if (allNodes.has(item.id)) {
         throw new Error(`Duplicate menu item id: "${item.id}"`);
       }

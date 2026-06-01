@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { validateConfigSemantics } from "../src/loader/loader.js";
 import { ConfigSchema } from "../src/loader/schema.js";
 
 const validConfig = {
@@ -119,6 +120,57 @@ describe("ConfigSchema", () => {
 
   it("rejects menu item without label", () => {
     expect(() => ConfigSchema.parse({ name: "x", menu: [{ id: "a" }] })).toThrow();
+  });
+
+  it("rejects shell-unsafe menu ids", () => {
+    for (const id of ["bad id", "bad.id", "bad;id", "bad[id]", "bad'id", 'bad"id']) {
+      const config = ConfigSchema.parse({ name: "x", menu: [{ id, label: "Bad" }] });
+      expect(() => validateConfigSemantics(config)).toThrow(
+        new RegExp(`Menu item id "${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}".*letters, digits`)
+      );
+    }
+  });
+
+  it("accepts shell-safe ids with leading and trailing valid characters", () => {
+    const result = ConfigSchema.parse({
+      name: "x",
+      menu: [
+        { id: "-leading", label: "Leading" },
+        { id: "trailing_", label: "Trailing" },
+        { id: "A_1-z", label: "Mixed" },
+      ],
+    });
+
+    expect(result.menu.map((item) => item.id)).toEqual(["-leading", "trailing_", "A_1-z"]);
+  });
+
+  it("rejects generated header metadata with newlines or control characters", () => {
+    for (const field of ["name", "version", "description"] as const) {
+      expect(() =>
+        ConfigSchema.parse({
+          ...validConfig,
+          [field]: `safe\nunsafe`,
+        })
+      ).toThrow(/Header metadata/);
+    }
+
+    expect(() => ConfigSchema.parse({ ...validConfig, description: "bad\rline" })).toThrow(
+      /Header metadata/
+    );
+    expect(() => ConfigSchema.parse({ ...validConfig, description: "bad\u001b[31m" })).toThrow(
+      /Header metadata/
+    );
+  });
+
+  it("accepts normal generated header metadata", () => {
+    const result = ConfigSchema.parse({
+      ...validConfig,
+      name: "dot 安装器",
+      version: "1.0.0",
+      description: "Self-contained installer",
+    });
+
+    expect(result.description).toBe("Self-contained installer");
   });
 
   it("default output values", () => {

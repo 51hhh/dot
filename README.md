@@ -124,7 +124,7 @@ Important fields:
 | `id` | yes | Stable unique id. Keep ids shell-safe: letters, digits, `_`, and `-`. |
 | `label` | yes | Menu and plan display text. |
 | `description` | no | Additional display text. |
-| `script` | no | Shell snippet path, resolved relative to the config file. |
+| `script` | no | Trusted shell snippet path, resolved relative to the config file and limited to the config directory or sibling `templates/` root. |
 | `vars` | no | Template variables for `{{variable}}` replacement. |
 | `deps` | no | Other ids that must run before this node. |
 | `children` | no | Nested menu items. |
@@ -139,6 +139,12 @@ Template snippets can use defaults:
 ```bash
 echo "Installing version {{version:latest}}"
 ```
+
+`script` files are trusted executable shell. The generator embeds their rendered
+contents into the release script, so configs from untrusted sources must not be
+used to read arbitrary local files. Current builds accept snippets under the
+config directory itself or under a sibling `templates/` directory such as
+`configs/../templates`.
 
 ## Sidecar Plan Overlays
 

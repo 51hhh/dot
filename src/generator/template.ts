@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 
 /**
  * Replace {{variable}} placeholders in template content.
@@ -32,4 +33,24 @@ export function loadTemplate(
   }
   const content = fs.readFileSync(templatePath, "utf-8");
   return renderTemplate(content, vars, unresolved);
+}
+
+export function resolveTemplatePath(scriptPath: string, configDir: string): string {
+  const resolved = path.resolve(configDir, scriptPath);
+  assertTemplatePathAllowed(resolved, configDir);
+  return resolved;
+}
+
+export function assertTemplatePathAllowed(resolvedPath: string, configDir: string): void {
+  const allowedRoots = [path.resolve(configDir), path.resolve(configDir, "../templates")];
+  for (const allowedRoot of allowedRoots) {
+    const relative = path.relative(allowedRoot, resolvedPath);
+    if (relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative))) {
+      return;
+    }
+  }
+
+  throw new Error(
+    `Template path rejected: ${resolvedPath}. Script paths must resolve under allowed template roots: ${allowedRoots.join(", ")}.`
+  );
 }
