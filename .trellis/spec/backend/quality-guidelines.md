@@ -90,11 +90,17 @@ For the self-contained MVP:
 ```bash
 dot build --config <path> [--output <path>] [--quiet]
 node dist/index.js build --config configs/tmux.yaml --output dist/dot.sh --quiet
+bash dist/dot.sh --dry-run-plan --select <ids...>
 ```
 
 Build-time TypeScript API:
 
 ```ts
+planOverlayPathForConfig(configPath: string): string
+loadPlanOverlay(planPath: string): PlanOverlay | null
+applyPlanOverlayToConfig(config: Config, overlay: PlanOverlay | null): Config
+validateConfigSemantics(config: Config): void
+
 assembleStandalone(opts: {
   config: Config;
   configPath: string;
@@ -107,6 +113,11 @@ assembleStandalone(opts: {
 
 - `--config` is required and points to YAML/JSON accepted by `loadConfig`.
 - `--output` defaults to `dist/dot.sh` and resolves from the current working directory for `dot build`.
+- If `<config-basename>.plan.json` exists next to the config file, `dot build` must load it before assembly.
+- Sidecar plan overlays are external input and must be validated with Zod at the file boundary.
+- Build-time overlay changes may only affect safe config fields: `label`, `description`, `hidden`, `post`, and non-`root` `mode`; `positions` are Studio-only and must not affect build output.
+- Overlay `disabled` entries force matching config nodes to `hidden: true` and win over `hidden: false` overrides.
+- After applying an overlay to config, run `validateConfigSemantics(config)` again before flattening nodes or assembling the standalone script.
 - Generated output must be a single bash file with no runtime dependency on Node.js, npm, project configs, or template files.
 - Generated output must contain:
   - bash shebang
@@ -117,6 +128,8 @@ assembleStandalone(opts: {
   - execution planner and executor
 - Generated script ids must be shell-safe: only letters, digits, `_`, and `-`.
 - Generated function names must normalize ids and include a stable suffix to avoid collisions.
+- Generated `dot.sh --dry-run-plan --select <ids...>` must be noninteractive: select the requested ids, expand branch ids to runnable leaves, include dependencies through the same runtime planner used by interactive execution, print the resolved plan, and exit before running snippets.
+- Dry-run plan output must show normal steps before post steps, and must include ids so CI can assert dependency and post ordering without localized label coupling.
 
 ### 4. Validation & Error Matrix
 
@@ -126,21 +139,35 @@ assembleStandalone(opts: {
 | Unsupported config extension | `loadConfig` throws unsupported format error |
 | Duplicate menu id | semantic validation throws before generation |
 | Unknown dependency | semantic validation throws before generation |
+| Invalid sidecar overlay shape | `loadPlanOverlay` throws `Invalid plan overlay ...` before generation |
+| Overlay creates a non-post dependency on a post item | `validateConfigSemantics` throws and no output file is written |
+| Overlay contains unsafe fields such as `script` | Field is stripped/ignored and cannot change snippet source |
 | Bash-unsafe id | standalone assembler throws `not shell-safe` |
 | Generated bash syntax invalid | `validateScript` reports `bash -n` failure and build exits non-zero |
+| Generated `--dry-run-plan` receives an unknown id | Script exits non-zero and reports `Unknown menu item id` without running snippets |
+| Generated `--dry-run-plan` receives no selection | Script exits non-zero and prints usage without entering the interactive TUI |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `node dist/index.js build --config configs/tmux.yaml --output dist/dot.sh --quiet` creates a valid self-contained script.
+- Good: `bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize` prints `tmux-header` and `tmux-tpm` before `tmux-plugin-resurrect`, then prints post steps after normal steps.
+- Good: `configs/dot.plan.json` can hide a node or override its label, and the generated `DOT_HIDDEN` / `DOT_LABELS` metadata reflects that change.
 - Base: generated script contains `dot_navigate()`, `DOT_CHILDREN['__root']`, and `dot_main "$@"`.
 - Bad: an id like `bad.id` is rejected instead of producing an invalid bash function or associative-array key.
+- Bad: sidecar JSON is cast to `PlanOverlay` without validation.
+- Bad: an overlay changes `post` behavior without rerunning dependency/post semantic validation.
+- Bad: an overlay can replace a node `script` path and silently change executed code.
 
 ### 6. Tests Required
 
 - Unit: `assembleStandalone` emits runtime, root menu data, snippets, and entrypoint.
 - Unit: `bashFunctionNameForId` removes unsafe characters and avoids `-` in function names.
 - Unit: unsafe ids throw before output is written.
+- Unit: invalid plan overlay field types are rejected at `loadPlanOverlay`.
 - CLI: `dot build --config ... --output ... --quiet` writes a standalone script.
+- CLI: sidecar overlay affects generated build metadata for safe fields.
+- CLI: overlay-created dependency/post conflicts fail before writing output.
+- CLI: generated script `--dry-run-plan --select ...` prints dependency-expanded normal steps before post steps and does not print snippet command output.
 - Integration: generated `dist/dot.sh` passes `bash -n`.
 
 ### 7. Wrong vs Correct
@@ -152,6 +179,12 @@ assembleStandalone(opts: {
 sections.push(`source templates/tmux/header.sh`);
 ```
 
+```ts
+// Overlay JSON is trusted and can bypass config validation.
+const overlay = JSON.parse(fs.readFileSync(path, "utf-8")) as PlanOverlay;
+const config = applyPlanOverlayToConfig(loadConfig(configPath), overlay);
+```
+
 #### Correct
 
 ```ts
@@ -159,4 +192,11 @@ sections.push(`source templates/tmux/header.sh`);
 sections.push(`${func}() {`);
 sections.push(renderedTemplateContent);
 sections.push("}");
+```
+
+```ts
+const loadedConfig = loadConfig(configPath);
+const overlay = loadPlanOverlay(planOverlayPathForConfig(configPath));
+const config = applyPlanOverlayToConfig(loadedConfig, overlay);
+validateConfigSemantics(config);
 ```

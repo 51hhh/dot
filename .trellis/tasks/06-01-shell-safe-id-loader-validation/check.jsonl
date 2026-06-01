@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review semantic validation error shape."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review id safety tests and generator defense in depth."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review plan/studio assumptions around ids."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Confirm validation placement gap is closed."}

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Studio graph, diagnostics, and InstallationPlan contracts."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Plan Canvas UI component expectations."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Studio UI test and output quality expectations."}
+{"file": ".trellis/tasks/06-01-plan-canvas-editor-roadmap/architecture.md", "reason": "Diagnostics and conflict UX roadmap context."}

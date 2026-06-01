@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review resolved plan and overlay validation behavior."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review plan/studio contracts after overlay v2."}
+{"file": ".trellis/tasks/06-01-overlay-v2-migration-design/architecture.md", "reason": "Check implementation follows approved migration design."}
+{"file": ".trellis/tasks/06-01-plan-canvas-editor-roadmap/architecture.md", "reason": "Check implementation keeps Studio as constrained editor, not executable source."}

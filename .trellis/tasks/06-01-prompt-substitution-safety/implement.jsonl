@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Generated script safety, standalone build contract, dry-run plan contract, and required checks."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Boundary validation and generator error handling expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Generated prompt type contract and runtime prompt metadata expectations."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Security finding that motivates prompt substitution hardening."}

@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-01-modularize-standalone-assembler/prd.md", "reason": "Task PRD and acceptance criteria"}
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Generator module organization"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Generated bash runtime state handling"}

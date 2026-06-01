@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review plan diagnostics and Studio projection contracts."}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Review UI composition and interaction states."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review Studio tests and layout stability."}
+{"file": ".trellis/tasks/06-01-plan-canvas-editor-roadmap/architecture.md", "reason": "Check UX aligns with roadmap constraints."}

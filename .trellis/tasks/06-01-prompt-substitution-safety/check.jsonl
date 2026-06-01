@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify tests and generated bash validation match project quality gate."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review fail-fast behavior and actionable errors."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review prompt metadata and supported prompt type contract."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Confirm the audited high-risk issue is closed."}

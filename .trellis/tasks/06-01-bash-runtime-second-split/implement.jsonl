@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Generator module ownership and recommended standalone layout."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Generated bash runtime tests, dry-run contract, and quality gate."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Generated bash TUI state and cleanup expectations."}
+{"file": ".trellis/tasks/06-01-modularize-standalone-assembler/prd.md", "reason": "First split task context and non-regression intent."}

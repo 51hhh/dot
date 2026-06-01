@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Testing requirements and generated script behavior contracts."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Plan and Studio behavior contracts currently covered by tests."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "UI/output behavior testing expectations."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Guide for introducing focused reusable test helpers."}

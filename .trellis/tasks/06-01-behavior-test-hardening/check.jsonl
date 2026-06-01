@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review no behavior coverage is lost."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review Studio/plan tests remain contract-based."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review UI tests remain meaningful."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Review any new test helpers are justified."}

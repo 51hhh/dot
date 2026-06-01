@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Loader semantic validation and clear config error expectations."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Shell-safe id and generated bash serialization requirements."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Plan and generated UI contracts that depend on stable shell-safe ids."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Audit note that id validation should move earlier."}

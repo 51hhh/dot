@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "File boundary and config-relative path handling rules."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Template path read failures and actionable boundary errors."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Template rendering, generated output, and tests required for generator changes."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Template path trust-boundary finding and suggested fix scope."}

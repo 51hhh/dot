@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Overlay validation, resolved build plan, and generated script contracts."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "InstallationPlan and Studio projection contracts impacted by overlay semantics."}
+{"file": ".trellis/tasks/06-01-overlay-v2-migration-design/architecture.md", "reason": "Detailed overlay v2 schema, migration, diagnostics, and save policy."}
+{"file": ".trellis/tasks/06-01-plan-canvas-editor-roadmap/architecture.md", "reason": "Long-term constrained editor and overlay ownership decisions."}

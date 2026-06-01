@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Generated script header and bash syntax validation expectations."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Config validation error conventions."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Generated terminal output and user-facing text quality constraints."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Header metadata safety follow-up from audit."}

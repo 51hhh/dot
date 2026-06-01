@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/06-01-harden-studio-api/prd.md", "reason": "Task PRD and acceptance criteria"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Zod and InstallationPlan contracts"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Quality checks"}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "HTTP and file-boundary error behavior"}

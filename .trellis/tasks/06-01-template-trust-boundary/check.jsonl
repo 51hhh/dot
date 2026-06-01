@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/database-guidelines.md", "reason": "Check file resolution stays config-relative and boundary-safe."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check rejected path messages are actionable."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check relevant tests and generated script validation."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Check the trusted-local-code boundary is explicitly handled."}

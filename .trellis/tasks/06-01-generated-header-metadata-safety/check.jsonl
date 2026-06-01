@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check generated script syntax and tests."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check validation failures are clear."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Check generated text remains readable."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Confirm header metadata concern is handled."}

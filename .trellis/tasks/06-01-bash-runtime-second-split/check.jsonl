@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/directory-structure.md", "reason": "Review module boundaries after split."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review generated behavior tests and bash syntax validation."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review generated TUI behavior remains intact."}
+{"file": ".trellis/tasks/06-01-modularize-standalone-assembler/prd.md", "reason": "Check second split remains aligned with original refactor goals."}

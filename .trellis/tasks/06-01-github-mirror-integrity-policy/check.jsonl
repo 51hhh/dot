@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review generated script checks."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Review mirror warning UX quality."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Confirm mirror integrity risk is documented."}
+{"file": ".trellis/tasks/06-01-docs-release-pipeline/prd.md", "reason": "Check docs stay aligned with release workflow."}

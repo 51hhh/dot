@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Generated runtime and release artifact contracts."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "User-facing terminal output expectations."}
+{"file": ".trellis/tasks/06-01-runtime-security-audit/security-audit.md", "reason": "Mirror trust and integrity finding."}
+{"file": ".trellis/tasks/06-01-docs-release-pipeline/prd.md", "reason": "Docs/release context for artifact trust policy."}
