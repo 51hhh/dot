@@ -559,7 +559,7 @@ describe("assembleStandalone", () => {
     const dir = tmpDir();
 
     try {
-      const scriptPath = writeTmpFile(dir, "prefix.sh", "echo prefix={{custom_prefix:C-x}}");
+      const scriptPath = writeTmpFile(dir, "prefix.sh", 'CUSTOM_PREFIX="{{custom_prefix:C-x}}"\necho "prefix=$CUSTOM_PREFIX"');
       const config: Config = {
         name: "dot",
         version: "1.0",
@@ -599,8 +599,8 @@ describe("assembleStandalone", () => {
       expect(generated).toContain("DOT_PROMPT_LABELS['tmux-prefix-compose']='Record prefix'");
       expect(generated).toContain('key-compose)');
       expect(generated).toContain('dot_compose_tmux_key_prompt "$choice"');
-      expect(generated).toContain("${DOT_VARS[custom_prefix]:-C-x}");
-      expect(generated).toContain("prefix=${DOT_VARS[custom_prefix]:-C-x}");
+      expect(generated).toContain("$(dot_get_var_or_default 'custom_prefix' 'C-x')");
+      expect(generated).toContain('CUSTOM_PREFIX="$(dot_get_var_or_default');
 
       const result = runGeneratedBash(
         dir,
@@ -611,6 +611,41 @@ describe("assembleStandalone", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("status=0 selected=1 var=C-a");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("treats prompt fallback values as data instead of shell syntax", () => {
+    const dir = tmpDir();
+
+    try {
+      const markerPath = path.join(dir, "prompt-injection-marker");
+      const scriptPath = writeTmpFile(
+        dir,
+        "prefix.sh",
+        `CUSTOM_PREFIX="{{custom_prefix:C-x;$(touch ${markerPath})}}"\nprintf 'prefix=<%s>\\n' "$CUSTOM_PREFIX"`
+      );
+      const config: Config = {
+        name: "dot",
+        version: "1.0",
+        output: { filename: "dot.sh", dir },
+        menu: [{
+          id: "prefix",
+          label: "Prefix",
+          script: scriptPath,
+          prompt: { type: "text", var: "custom_prefix", label: "Prefix" },
+        }],
+      };
+
+      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      expect(generated).toContain(`$(dot_get_var_or_default 'custom_prefix' 'C-x;$(touch ${markerPath})')`);
+
+      const result = runGeneratedBash(dir, generated, `${bashFunctionNameForId("prefix")}`);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain(`prefix=<C-x;$(touch ${markerPath})>`);
+      expect(fs.existsSync(markerPath)).toBe(false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

@@ -90,6 +90,12 @@ describe("ConfigSchema", () => {
     expect(() =>
       ConfigSchema.parse({
         name: "dot",
+        menu: [{ id: "prompt", label: "Prompt", prompt: { type: "key", var: "bad-name", label: "Record key" } }],
+      })
+    ).toThrow(/shell-safe identifier/);
+    expect(() =>
+      ConfigSchema.parse({
+        name: "dot",
         menu: [{ id: "prompt", label: "Prompt", prompt: { type: "key", var: "custom_prefix", label: "" } }],
       })
     ).toThrow();

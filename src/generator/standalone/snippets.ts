@@ -1,7 +1,9 @@
 import path from "node:path";
+import fs from "node:fs";
 import type { Config, MenuItem } from "../../loader/schema.js";
 import type { InstallationPlan } from "../../planner/types.js";
 import { loadTemplate } from "../template.js";
+import { bashQuote } from "./ids.js";
 import { planNodeFor } from "./nodes.js";
 
 export interface SnippetRenderOptions {
@@ -32,9 +34,12 @@ export function renderSnippetFunctions({
       ? buildNode.script
       : path.resolve(configDir, buildNode.script);
     const mergedVars = { ...config.vars, ...node.vars };
+    const rawScriptContent = fs.readFileSync(scriptPath, "utf-8");
     let scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();
     for (const prompt of collectPrompts(node)) {
-      scriptContent = replaceRenderedPromptValue(scriptContent, prompt.var, mergedVars[prompt.var] ?? "");
+      for (const fallback of promptFallbacks(rawScriptContent, prompt.var, mergedVars)) {
+        scriptContent = replaceRenderedPromptValue(scriptContent, prompt.var, fallback);
+      }
     }
 
     sections.push(`# ─── ${buildNode.label} (${id}) ───`);
@@ -63,5 +68,26 @@ function collectPrompts(node: MenuItem): Array<{ var: string }> {
 function replaceRenderedPromptValue(content: string, varName: string, fallback: string): string {
   if (!fallback) return content;
   const escaped = fallback.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return content.replace(new RegExp(escaped, "g"), `\${DOT_VARS[${varName}]:-${fallback}}`);
+  return content.replace(new RegExp(escaped, "g"), `$(dot_get_var_or_default ${bashQuote(varName)} ${bashQuote(fallback)})`);
+}
+
+function promptFallbacks(
+  rawContent: string,
+  varName: string,
+  mergedVars: Record<string, string>
+): string[] {
+  const fallbacks = new Set<string>();
+  const configuredValue = mergedVars[varName];
+  if (configuredValue) fallbacks.add(configuredValue);
+
+  const pattern = /\{\{(\w+)(?::([^}]*))?\}\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(rawContent)) !== null) {
+    const [, key, defaultValue] = match;
+    if (key === varName && defaultValue) {
+      fallbacks.add(defaultValue);
+    }
+  }
+
+  return [...fallbacks];
 }

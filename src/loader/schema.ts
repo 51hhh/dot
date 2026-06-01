@@ -2,7 +2,7 @@ import { z } from "zod";
 
 export const PromptSchema = z.object({
   type: z.enum(["key", "key-compose", "text"]),
-  var: z.string().min(1),
+  var: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Prompt var must be a shell-safe identifier"),
   label: z.string().min(1),
 });
 
