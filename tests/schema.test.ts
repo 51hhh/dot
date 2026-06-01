@@ -46,7 +46,7 @@ describe("ConfigSchema", () => {
           mode: "flow",
           children: [
             { id: "tmux-install", label: "Install", mode: "single", children: [{ id: "apt", label: "apt" }] },
-            { id: "tmux-header", label: "Header", hidden: true, prompt: { type: "key", var: "custom_prefix", label: "Record key" } },
+            { id: "tmux-header", label: "Header", hidden: true, prompt: { type: "key-compose", var: "custom_prefix", label: "Record key" } },
           ],
         },
       ],
@@ -54,7 +54,45 @@ describe("ConfigSchema", () => {
     expect(result.menuMode).toBe("single");
     expect(result.menu[0].mode).toBe("flow");
     expect(result.menu[0].children?.[1].hidden).toBe(true);
-    expect(result.menu[0].children?.[1].prompt?.type).toBe("key");
+    expect(result.menu[0].children?.[1].prompt?.type).toBe("key-compose");
+  });
+
+  it("accepts all supported prompt types", () => {
+    for (const promptType of ["key", "key-compose", "text"] as const) {
+      const result = ConfigSchema.parse({
+        name: "dot",
+        menu: [
+          {
+            id: `prompt-${promptType}`,
+            label: "Prompt",
+            prompt: { type: promptType, var: "custom_prefix", label: "Record key" },
+          },
+        ],
+      });
+
+      expect(result.menu[0].prompt?.type).toBe(promptType);
+    }
+  });
+
+  it("rejects invalid prompt definitions", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        name: "dot",
+        menu: [{ id: "prompt", label: "Prompt", prompt: { type: "unknown", var: "custom_prefix", label: "Record key" } }],
+      })
+    ).toThrow();
+    expect(() =>
+      ConfigSchema.parse({
+        name: "dot",
+        menu: [{ id: "prompt", label: "Prompt", prompt: { type: "key", var: "", label: "Record key" } }],
+      })
+    ).toThrow();
+    expect(() =>
+      ConfigSchema.parse({
+        name: "dot",
+        menu: [{ id: "prompt", label: "Prompt", prompt: { type: "key", var: "custom_prefix", label: "" } }],
+      })
+    ).toThrow();
   });
 
   it("rejects empty name", () => {

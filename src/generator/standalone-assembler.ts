@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { Config, MenuItem } from "../loader/schema.js";
+import type { InstallationPlan, PlanNode } from "../planner/types.js";
 import { flattenNodes, getLeafIds } from "../utils/deps.js";
 import { loadTemplate } from "./template.js";
 
@@ -7,10 +8,12 @@ export interface StandaloneAssembleOptions {
   config: Config;
   configPath: string;
   allNodes?: Map<string, MenuItem>;
+  plan?: InstallationPlan;
   warnings?: string[];
 }
 
 const ROOT_ID = "__root";
+type MenuMode = NonNullable<MenuItem["mode"]>;
 
 export function assembleStandalone(opts: StandaloneAssembleOptions): string {
   const { config, configPath } = opts;
@@ -23,7 +26,7 @@ export function assembleStandalone(opts: StandaloneAssembleOptions): string {
 
   const snippetFunctions = new Map<string, string>();
   for (const [id, node] of allNodes) {
-    if (node.script) {
+    if (planNodeFor(id, opts.plan, node).script) {
       snippetFunctions.set(id, bashFunctionNameForId(id));
     }
   }
@@ -32,8 +35,8 @@ export function assembleStandalone(opts: StandaloneAssembleOptions): string {
   const sections = [
     generateHeader(config),
     generateRuntime(),
-    generateData(config, allNodes, snippetFunctions),
-    generateSnippetFunctions(config, configDir, allNodes, snippetFunctions, unresolved),
+    generateData(config, allNodes, snippetFunctions, opts.plan),
+    generateSnippetFunctions(config, configDir, allNodes, snippetFunctions, unresolved, opts.plan),
     'dot_main "$@"',
     "",
   ];
@@ -73,6 +76,26 @@ function assocAssign(name: string, key: string, value: string): string {
   return `${name}[${bashQuote(key)}]=${bashQuote(value)}`;
 }
 
+function planNodeFor(id: string, plan: InstallationPlan | undefined, fallback: MenuItem): MenuItem | PlanNode {
+  return plan?.nodes[id] ?? fallback;
+}
+
+function buildInheritedModeMap(config: Config): Map<string, MenuMode> {
+  const modes = new Map<string, MenuMode>();
+  const rootMode = config.menuMode ?? "single";
+
+  function walk(items: MenuItem[], inheritedMode: MenuMode): void {
+    for (const item of items) {
+      const mode = item.mode ?? inheritedMode;
+      modes.set(item.id, mode);
+      walk(item.children ?? [], mode);
+    }
+  }
+
+  walk(config.menu, rootMode);
+  return modes;
+}
+
 function generateHeader(config: Config): string {
   return `#!/usr/bin/env bash
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -106,6 +129,198 @@ log_ok()    { printf "%b[OK]%b    %s\\n" "$GREEN" "$NC" "$*"; }
 log_warn()  { printf "%b[WARN]%b  %s\\n" "$YELLOW" "$NC" "$*"; }
 log_error() { printf "%b[ERROR]%b %s\\n" "$RED" "$NC" "$*"; }
 
+readonly -a DOT_GITHUB_MIRRORS=(
+  ''
+  'https://gh.ddlc.top/'
+  'https://gh.llkk.cc/'
+  'https://ghfast.top/'
+  'https://gh-proxy.com/'
+  'https://ghproxy.net/'
+  'https://hub.gitmirror.com/'
+  'https://ghproxy.cc/'
+  'https://ghproxy.cn/'
+  'https://ghproxy.com/'
+  'https://mirror.ghproxy.com/'
+)
+DOT_GITHUB_SELECTED_PREFIX=""
+DOT_GITHUB_ORDERED_PREFIXES=()
+DOT_GITHUB_MIRROR_TESTED=0
+
+dot_sudo() {
+  if [[ "@{EUID:-$(id -u)}" -eq 0 ]]; then
+    "$@"
+    return $?
+  fi
+
+  if command -v sudo >/dev/null 2>&1; then
+    sudo "$@"
+    return $?
+  fi
+
+  log_error "需要 root 权限执行: $*"
+  log_error "请以 root 运行，或先安装 sudo 并授予当前用户权限。"
+  return 1
+}
+
+dot_github_ordered_prefixes() {
+  local prefix existing seen
+  local ordered=()
+
+  if [[ -n "@{DOT_GITHUB_SELECTED_PREFIX:-}" ]]; then
+    ordered+=("$DOT_GITHUB_SELECTED_PREFIX")
+  fi
+
+  for prefix in "@{DOT_GITHUB_ORDERED_PREFIXES[@]:-}"; do
+    seen=0
+    for existing in "@{ordered[@]:-}"; do
+      if [[ "$existing" == "$prefix" ]]; then seen=1; fi
+    done
+    if [[ "$seen" == "0" ]]; then ordered+=("$prefix"); fi
+  done
+
+  for prefix in "@{DOT_GITHUB_MIRRORS[@]}"; do
+    seen=0
+    for existing in "@{ordered[@]:-}"; do
+      if [[ "$existing" == "$prefix" ]]; then seen=1; fi
+    done
+    if [[ "$seen" == "0" ]]; then ordered+=("$prefix"); fi
+  done
+
+  printf '%s\n' "@{ordered[@]}"
+}
+
+dot_github_url() {
+  local prefix="$1" url="$2"
+  if [[ -z "$prefix" ]]; then
+    printf '%s' "$url"
+  else
+    printf '%s%s' "$prefix" "$url"
+  fi
+}
+
+dot_download_from_url() {
+  local url="$1" out="$2"
+  local downloader
+
+  if command -v wget >/dev/null 2>&1; then
+    downloader="wget"
+  elif command -v curl >/dev/null 2>&1; then
+    downloader="curl"
+  else
+    log_error "下载失败：系统中未找到 wget 或 curl。"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$out")"
+  if [[ "$downloader" == "wget" ]]; then
+    wget --tries=2 --timeout=30 -q -O "$out" "$url"
+  else
+    curl -fL --connect-timeout 10 --max-time 180 -o "$out" "$url"
+  fi
+}
+
+dot_download_with_fallback() {
+  local url="$1" out="$2"
+  local prefix candidate downloader
+
+  if command -v wget >/dev/null 2>&1; then
+    downloader="wget"
+  elif command -v curl >/dev/null 2>&1; then
+    downloader="curl"
+  else
+    log_error "下载失败：系统中未找到 wget 或 curl。"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$out")"
+  while IFS= read -r prefix; do
+    candidate="$(dot_github_url "$prefix" "$url")"
+    if [[ -z "$prefix" ]]; then
+      log_info "下载（直连）: $url"
+    else
+      log_info "下载（镜像）: $candidate"
+    fi
+
+    if [[ "$downloader" == "wget" ]]; then
+      if wget --tries=2 --timeout=30 -q -O "$out" "$candidate"; then
+        log_ok "下载成功"
+        return 0
+      fi
+    else
+      if curl -fL --connect-timeout 10 --max-time 180 -o "$out" "$candidate"; then
+        log_ok "下载成功"
+        return 0
+      fi
+    fi
+
+    rm -f "$out"
+    log_warn "本次下载失败，尝试下一个源..."
+  done < <(dot_github_ordered_prefixes)
+
+  log_error "所有下载源均失败: $url"
+  log_warn "如 GitHub 不可达，请配置 https_proxy/http_proxy 后重试，或手动下载到目标路径。"
+  return 1
+}
+
+dot_git_clone_with_fallback() {
+  local repo="$1" dest="$2"
+  shift 2
+  local prefix candidate
+  local extra_args=("$@")
+
+  if ! command -v git >/dev/null 2>&1; then
+    log_error "克隆失败：系统中未找到 git。"
+    return 1
+  fi
+
+  mkdir -p "$(dirname "$dest")"
+  while IFS= read -r prefix; do
+    candidate="$(dot_github_url "$prefix" "$repo")"
+    if [[ -z "$prefix" ]]; then
+      log_info "克隆（直连）: $repo"
+    else
+      log_info "克隆（镜像）: $candidate"
+    fi
+
+    if git clone "@{extra_args[@]}" "$candidate" "$dest"; then
+      log_ok "克隆成功"
+      return 0
+    fi
+
+    if [[ ! -d "$dest/.git" ]]; then
+      rm -rf "$dest"
+    fi
+    log_warn "本次克隆失败，尝试下一个源..."
+  done < <(dot_github_ordered_prefixes)
+
+  log_error "所有 GitHub 克隆源均失败: $repo"
+  return 1
+}
+
+dot_git_pull_with_fallback() {
+  local repo_dir="$1" repo="$2"
+  local original candidate prefix updated=0
+
+  original="$(git -C "$repo_dir" remote get-url origin 2>/dev/null || printf '%s' "$repo")"
+  while IFS= read -r prefix; do
+    candidate="$(dot_github_url "$prefix" "$repo")"
+    if [[ -z "$prefix" ]]; then
+      log_info "更新 TPM（直连）: $candidate"
+    else
+      log_info "更新 TPM（镜像）: $candidate"
+    fi
+
+    if git -C "$repo_dir" remote set-url origin "$candidate" && git -C "$repo_dir" pull --ff-only; then
+      updated=1
+      break
+    fi
+    log_warn "本次 TPM 更新失败，尝试下一个源..."
+  done < <(dot_github_ordered_prefixes)
+
+  git -C "$repo_dir" remote set-url origin "$original" 2>/dev/null || true
+  [[ "$updated" == "1" ]]
+}
+
 DOT_PLAN=()
 DOT_POST_PLAN=()
 declare -A DOT_SELECTED=()
@@ -130,10 +345,30 @@ dot_read_key() {
   if [[ "$key" == $'\\e' ]]; then
     IFS= read -rsn1 -t 0.05 seq 2>/dev/null || seq=""
     key+="$seq"
-    IFS= read -rsn1 -t 0.05 seq 2>/dev/null || seq=""
-    key+="$seq"
+    case "$seq" in
+      '[')
+        while IFS= read -rsn1 -t 0.05 seq 2>/dev/null; do
+          key+="$seq"
+          case "$seq" in
+            [@-~]) break ;;
+          esac
+        done
+        ;;
+      O)
+        IFS= read -rsn1 -t 0.05 seq 2>/dev/null || seq=""
+        key+="$seq"
+        ;;
+    esac
   fi
   printf '%s' "$key"
+}
+
+dot_is_back_key() {
+  local key="$1"
+  case "$key" in
+    b|B|$'\\e[D'|$'\\eOD'|$'\\e['*D|$'\\eO'*D) return 0 ;;
+    *) return 1 ;;
+  esac
 }
 
 dot_pause() {
@@ -185,25 +420,44 @@ dot_choose_from_array() {
   local title="$1" subtitle="$2" result_var="$3"
   shift 3
   local options=("$@")
-  local selected=0 key i pointer desc
+  local selected=0 key i pointer start end total max_visible=12 more_top more_bottom
 
   while true; do
+    total="@{#options[@]}"
+    start=0
+    if [[ "$selected" -ge "$max_visible" ]]; then
+      start=$((selected - max_visible + 1))
+    fi
+    end=$((start + max_visible))
+    if [[ "$end" -gt "$total" ]]; then end="$total"; fi
+    more_top=0
+    more_bottom=0
+    if [[ "$start" -gt 0 ]]; then more_top=1; fi
+    if [[ "$end" -lt "$total" ]]; then more_bottom=1; fi
+
     dot_render_header "$title" "$subtitle"
     printf '%s\n' "────────────────────────────────────────"
-    for i in "@{!options[@]}"; do
+    if [[ "$more_top" == "1" ]]; then
+      printf "   %b↑ more%b\n" "$DIM" "$NC"
+    fi
+    for ((i=start; i<end; i++)); do
       pointer=" "
       if [[ "$i" -eq "$selected" ]]; then pointer="@{CYAN}>@{NC}"; fi
       printf " %b %s\n" "$pointer" "@{options[$i]}"
     done
+    if [[ "$more_bottom" == "1" ]]; then
+      printf "   %b↓ more%b\n" "$DIM" "$NC"
+    fi
     printf '%s\n' "────────────────────────────────────────"
-    printf "%b↑/↓%b 选择  %bEnter%b 确认  %bb/←%b 返回\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC"
+    printf "%b↑/↓%b 选择  %bEnter%b 确认  %bb/←%b 返回  %b%d/%d%b\n" "$CYAN" "$NC" "$CYAN" "$NC" "$CYAN" "$NC" "$DIM" "$((selected + 1))" "$total" "$NC"
 
     key="$(dot_read_key)" || return 1
     case "$key" in
       $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
-      $'\\e[B') if [[ "$selected" -lt $((@{#options[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
-      $'\\e[D'|b|B) return 2 ;;
+      $'\\e[B') if [[ "$selected" -lt $((total - 1)) ]]; then selected=$((selected + 1)); fi ;;
       "") printf -v "$result_var" '%s' "@{options[$selected]}"; return 0 ;;
+      q|Q) return 1 ;;
+      *) if dot_is_back_key "$key"; then return 2; fi ;;
     esac
   done
 }
@@ -228,7 +482,8 @@ dot_key_name_to_tmux_suffix() {
 }
 
 dot_compose_tmux_key_prompt() {
-  local item="$1" var="@{DOT_PROMPT_VARS[$item]:-}"
+  local item="$1"
+  local var="@{DOT_PROMPT_VARS[$item]:-}"
   local modifier key_name prefix suffix value confirm
   local modifiers=("Ctrl" "Alt/Meta")
   local keys=(
@@ -270,7 +525,7 @@ dot_compose_tmux_key_prompt() {
         return 0
         ;;
       r|R) continue ;;
-      b|B) return 2 ;;
+      *) if dot_is_back_key "$confirm"; then return 2; fi ;;
     esac
   done
 }
@@ -286,23 +541,15 @@ dot_record_key_prompt() {
     printf '%s\n' "────────────────────────────────────────"
     printf "请直接按下你想要的组合键。按 b 返回。\n"
     key="$(dot_read_key)" || return 1
-    if [[ "$key" == "b" || "$key" == "B" ]]; then
+    if dot_is_back_key "$key"; then
       return 2
-    fi
-    if [[ "$key" == "m" || "$key" == "M" ]]; then
-      dot_compose_tmux_key_prompt "$item"
-      case "$?" in
-        0) return 0 ;;
-        2) continue ;;
-        *) return 1 ;;
-      esac
     fi
     value="$(dot_key_to_tmux "$key")"
 
     dot_render_header "@{DOT_LABELS[$item]}" "$label"
     printf '%s\n' "────────────────────────────────────────"
     printf "录制结果：%b%s%b\n\n" "$GREEN" "$value" "$NC"
-    printf "Enter 确认，r 重新录制，m 手动组合，b 返回："
+    printf "Enter 确认，r 重新录制，b 返回："
     key="$(dot_read_key)" || return 1
     case "$key" in
       "")
@@ -312,15 +559,7 @@ dot_record_key_prompt() {
         return 0
         ;;
       r|R) continue ;;
-      m|M)
-        dot_compose_tmux_key_prompt "$item"
-        case "$?" in
-          0) return 0 ;;
-          2) continue ;;
-          *) return 1 ;;
-        esac
-        ;;
-      b|B) return 2 ;;
+      *) if dot_is_back_key "$key"; then return 2; fi ;;
     esac
   done
 }
@@ -332,12 +571,19 @@ dot_visible_children() {
       out+=("$child")
     fi
   done
-  printf '%s ' "@{out[@]}"
+  if [[ "@{#out[@]}" -gt 0 ]]; then
+    printf '%s ' "@{out[@]}"
+  fi
 }
 
 dot_has_children() {
-  local id="$1"
-  [[ -n "$(dot_visible_children "$id")" ]]
+  local id="$1" child
+  for child in @{DOT_CHILDREN[$id]:-}; do
+    if [[ "@{DOT_HIDDEN[$child]:-0}" != "1" ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 dot_is_item_selected() {
@@ -487,9 +733,9 @@ dot_choose_single() {
     case "$key" in
       $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
       $'\\e[B') if [[ "$selected" -lt $((@{#items[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
-      $'\\e[D'|b|B) return 2 ;;
       q|Q) return 1 ;;
       "") id="@{items[$selected]}"; DOT_CHOICE="$id"; return 0 ;;
+      *) if dot_is_back_key "$key"; then return 2; fi ;;
     esac
   done
 }
@@ -509,10 +755,10 @@ dot_choose_multi() {
     case "$key" in
       $'\\e[A') if [[ "$selected" -gt 0 ]]; then selected=$((selected - 1)); fi ;;
       $'\\e[B') if [[ "$selected" -lt $((@{#items[@]} - 1)) ]]; then selected=$((selected + 1)); fi ;;
-      $'\\e[D'|b|B) return 2 ;;
       q|Q) return 1 ;;
       " ") id="@{items[$selected]}"; dot_toggle_multi_item "$id" ;;
       "") return 0 ;;
+      *) if dot_is_back_key "$key"; then return 2; fi ;;
     esac
   done
 }
@@ -526,21 +772,44 @@ dot_run_step() {
 
   dot_render_flow_progress "$flow" "$step"
 
+  if ! dot_has_children "$step"; then
+    if [[ -n "@{DOT_SNIPPET_FUNCS[$step]:-}" ]]; then
+      DOT_SELECTED[$step]=1
+    fi
+    return 0
+  fi
+
   case "$mode" in
     single)
       dot_choose_single "$step" "$title" "$subtitle"
-      local result=$?
+      local result=$? choice=""
       if [[ "$result" -eq 0 ]]; then
-        dot_select_single_item "$step" "$DOT_CHOICE"
-        if [[ "@{DOT_PROMPT_TYPES[$DOT_CHOICE]:-}" == "key" ]]; then
-          dot_record_key_prompt "$DOT_CHOICE"
-          result=$?
+        choice="$DOT_CHOICE"
+        case "@{DOT_PROMPT_TYPES[$choice]:-}" in
+          key)
+            dot_record_key_prompt "$choice"
+            result=$?
+            ;;
+          key-compose)
+            dot_compose_tmux_key_prompt "$choice"
+            result=$?
+            ;;
+        esac
+        if [[ "$result" -eq 0 ]]; then
+          dot_select_single_item "$step" "$choice"
+          if [[ "@{DOT_END_FLOW[$choice]:-0}" == "1" ]]; then
+            return 3
+          fi
         fi
       fi
       return "$result"
       ;;
     multi)
       dot_choose_multi "$step" "$title" "$subtitle"
+      return $?
+      ;;
+    flow)
+      dot_run_flow "$step"
       return $?
       ;;
     *)
@@ -562,7 +831,24 @@ dot_run_flow() {
     result=$?
     case "$result" in
       0) index=$((index + 1)) ;;
-      2) if [[ "$index" -gt 0 ]]; then index=$((index - 1)); else return 2; fi ;;
+      2)
+        if [[ "$index" -eq 0 ]]; then
+          return 2
+        fi
+        index=$((index - 1))
+        while [[ "$index" -gt 0 ]]; do
+          step="@{steps[$index]}"
+          if dot_has_children "$step"; then
+            break
+          fi
+          index=$((index - 1))
+        done
+        step="@{steps[$index]}"
+        if [[ "$index" -eq 0 ]] && ! dot_has_children "$step"; then
+          return 2
+        fi
+        ;;
+      3) return 3 ;;
       *) return 1 ;;
     esac
   done
@@ -718,7 +1004,7 @@ dot_main() {
       result=$?
       if [[ "$result" -eq 2 ]]; then
         continue
-      elif [[ "$result" -ne 0 ]]; then
+      elif [[ "$result" -ne 0 && "$result" -ne 3 ]]; then
         printf '\\nAborted.\\n'
         exit 0
       fi
@@ -741,8 +1027,11 @@ dot_main() {
 function generateData(
   config: Config,
   allNodes: Map<string, MenuItem>,
-  snippetFunctions: Map<string, string>
+  snippetFunctions: Map<string, string>,
+  plan?: InstallationPlan
 ): string {
+  const inheritedModes = buildInheritedModeMap(config);
+  const rootMode = config.menuMode ?? "single";
   const lines: string[] = [
     `DOT_TITLE=${bashQuote(config.name)}`,
     "declare -a DOT_ALL_IDS=(" + [...allNodes.keys()].map(bashQuote).join(" ") + ")",
@@ -756,12 +1045,13 @@ function generateData(
     "declare -A DOT_PROMPT_TYPES=()",
     "declare -A DOT_PROMPT_VARS=()",
     "declare -A DOT_PROMPT_LABELS=()",
+    "declare -A DOT_END_FLOW=()",
     "declare -A DOT_POST=()",
     "declare -A DOT_SNIPPET_FUNCS=()",
     assocAssign("DOT_LABELS", ROOT_ID, config.name),
     assocAssign("DOT_DESCRIPTIONS", ROOT_ID, config.description ?? ""),
     assocAssign("DOT_CHILDREN", ROOT_ID, config.menu.map((item) => item.id).join(" ")),
-    assocAssign("DOT_MODES", ROOT_ID, config.menuMode ?? "multi"),
+    assocAssign("DOT_MODES", ROOT_ID, rootMode),
     assocAssign("DOT_HIDDEN", ROOT_ID, "0"),
     assocAssign("DOT_PROMPT_TYPES", ROOT_ID, ""),
     assocAssign("DOT_PROMPT_VARS", ROOT_ID, ""),
@@ -769,21 +1059,23 @@ function generateData(
   ];
 
   for (const [id, node] of allNodes) {
+    const buildNode = planNodeFor(id, plan, node);
     const children = node.children?.map((child) => child.id).join(" ") ?? "";
     const deps = node.deps?.join(" ") ?? "";
     const leaves = getLeafIds(node).join(" ");
 
-    lines.push(assocAssign("DOT_LABELS", id, node.label));
-    lines.push(assocAssign("DOT_DESCRIPTIONS", id, node.description ?? ""));
+    lines.push(assocAssign("DOT_LABELS", id, buildNode.label));
+    lines.push(assocAssign("DOT_DESCRIPTIONS", id, buildNode.description ?? ""));
     lines.push(assocAssign("DOT_CHILDREN", id, children));
     lines.push(assocAssign("DOT_DEPS", id, deps));
     lines.push(assocAssign("DOT_LEAVES", id, leaves));
-    lines.push(assocAssign("DOT_MODES", id, node.mode ?? "multi"));
-    lines.push(assocAssign("DOT_HIDDEN", id, node.hidden ? "1" : "0"));
-    lines.push(assocAssign("DOT_PROMPT_TYPES", id, node.prompt?.type ?? ""));
-    lines.push(assocAssign("DOT_PROMPT_VARS", id, node.prompt?.var ?? ""));
-    lines.push(assocAssign("DOT_PROMPT_LABELS", id, node.prompt?.label ?? ""));
-    lines.push(assocAssign("DOT_POST", id, node.post ? "1" : "0"));
+    lines.push(assocAssign("DOT_MODES", id, buildNode.mode === "root" ? rootMode : buildNode.mode ?? inheritedModes.get(id) ?? rootMode));
+    lines.push(assocAssign("DOT_HIDDEN", id, buildNode.hidden ? "1" : "0"));
+    lines.push(assocAssign("DOT_PROMPT_TYPES", id, buildNode.prompt?.type ?? ""));
+    lines.push(assocAssign("DOT_PROMPT_VARS", id, buildNode.prompt?.var ?? ""));
+    lines.push(assocAssign("DOT_PROMPT_LABELS", id, buildNode.prompt?.label ?? ""));
+    lines.push(assocAssign("DOT_END_FLOW", id, node.endFlow ? "1" : "0"));
+    lines.push(assocAssign("DOT_POST", id, buildNode.post ? "1" : "0"));
 
     const func = snippetFunctions.get(id);
     if (func) {
@@ -819,24 +1111,26 @@ function generateSnippetFunctions(
   configDir: string,
   allNodes: Map<string, MenuItem>,
   snippetFunctions: Map<string, string>,
-  unresolved: Set<string>
+  unresolved: Set<string>,
+  plan?: InstallationPlan
 ): string {
   const sections: string[] = [];
 
   for (const [id, node] of allNodes) {
     const func = snippetFunctions.get(id);
-    if (!func || !node.script) continue;
+    const buildNode = planNodeFor(id, plan, node);
+    if (!func || !buildNode.script) continue;
 
-    const scriptPath = path.isAbsolute(node.script)
-      ? node.script
-      : path.resolve(configDir, node.script);
+    const scriptPath = path.isAbsolute(buildNode.script)
+      ? buildNode.script
+      : path.resolve(configDir, buildNode.script);
     const mergedVars = { ...config.vars, ...node.vars };
     let scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();
     for (const prompt of collectPrompts(node)) {
       scriptContent = replaceRenderedPromptValue(scriptContent, prompt.var, mergedVars[prompt.var] ?? "");
     }
 
-    sections.push(`# ─── ${node.label} (${node.id}) ───`);
+    sections.push(`# ─── ${buildNode.label} (${id}) ───`);
     sections.push(`${func}() {`);
     sections.push(scriptContent);
     sections.push("}");

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const cli = path.resolve(import.meta.dirname, "../dist/index.js");
@@ -101,6 +102,38 @@ describe("CLI output path", () => {
 });
 
 
+describe("CLI plan", () => {
+  it("prints a tree preview", () => {
+    const { stdout, exitCode } = run([
+      "plan",
+      "--config", dotConfig,
+      "--format", "text",
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("Installation plan");
+    expect(stdout).toContain("tmux");
+    expect(stdout).toContain("dependency");
+    expect(stdout).toContain("post");
+  });
+
+  it("writes a JSON plan snapshot", () => {
+    const output = path.resolve(import.meta.dirname, "../dist/dot.plan.json");
+    const { exitCode } = run([
+      "plan",
+      "--config", dotConfig,
+      "--format", "json",
+      "--write", output,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const plan = JSON.parse(fs.readFileSync(output, "utf-8"));
+    expect(plan.version).toBe(1);
+    expect(plan.nodes.tmux).toBeDefined();
+  });
+});
+
+
 describe("CLI build", () => {
   it("generates a standalone script", () => {
     const output = path.resolve(import.meta.dirname, "../dist/test-dot.sh");
@@ -117,6 +150,56 @@ describe("CLI build", () => {
     expect(script).toContain("dot_run_flow()");
     expect(script).toContain("DOT_CHILDREN['__root']");
     expect(script).toContain('dot_main "$@"');
+  });
+
+  it("applies a saved sidecar plan overlay during standalone build", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-overlay-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      const output = path.join(dir, "dot.sh");
+      fs.writeFileSync(path.join(dir, "feature.sh"), "echo feature\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Overlay build"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "feature"',
+          '    label: "Feature"',
+          '    script: "feature.sh"',
+          "",
+        ].join("\n")
+      );
+      fs.writeFileSync(
+        path.join(dir, "config.plan.json"),
+        JSON.stringify({
+          version: 1,
+          disabled: ["feature"],
+          overrides: {
+            feature: {
+              label: "Feature disabled by overlay",
+              description: "Overlay description",
+              hidden: false,
+              post: true,
+              script: "missing.sh",
+            },
+          },
+        })
+      );
+
+      const { exitCode } = run(["build", "--config", configPath, "--output", output, "--quiet"]);
+
+      expect(exitCode).toBe(0);
+      const script = fs.readFileSync(output, "utf-8");
+      expect(script).toContain("DOT_LABELS['feature']='Feature disabled by overlay'");
+      expect(script).toContain("DOT_DESCRIPTIONS['feature']='Overlay description'");
+      expect(script).toContain("DOT_HIDDEN['feature']='1'");
+      expect(script).toContain("DOT_POST['feature']='1'");
+      expect(script).toContain("echo feature");
+      execFileSync("bash", ["-n", output]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -136,6 +219,84 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_CHILDREN['__root']='tmux'");
     expect(script).toContain("DOT_MODES['__root']='single'");
     expect(script).toContain("DOT_MODES['tmux']='flow'");
+    expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-status tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
+    expect(script).toContain("DOT_MODES['tmux-plugins']='flow'");
+    expect(script).toContain(
+      "DOT_CHILDREN['tmux-plugins']='tmux-plugin-foundation tmux-plugin-session tmux-plugin-productivity tmux-plugin-status tmux-plugin-themes tmux-plugin-navigation'"
+    );
+    expect(script).toContain("DOT_MODES['tmux-plugin-status']='multi'");
+    expect(script).toContain("DOT_MODES['tmux-plugin-themes']='multi'");
+    expect(script).toContain("tmux-prefix-record");
+    expect(script).toContain("tmux-prefix-compose");
+    expect(script).toContain("tmux-plugin-prefix-highlight");
+    expect(script).toContain("tmux-plugins/tmux-prefix-highlight");
+    expect(script).toContain("tmux-plugin-cpu");
+    expect(script).toContain("tmux-plugins/tmux-cpu");
+    expect(script).toContain("tmux-plugin-battery");
+    expect(script).toContain("tmux-plugins/tmux-battery");
+    expect(script).toContain("tmux-plugin-sidebar");
+    expect(script).toContain("tmux-plugins/tmux-sidebar");
+    expect(script).toContain("tmux-plugin-catppuccin");
+    expect(script).toContain("catppuccin/tmux");
+    expect(script).toContain("RESURRECT_DIR=\"$HOME/.tmux/resurrect\"");
+    expect(script).toContain("mkdir -p \"$RESURRECT_DIR\"");
+    expect(script).toContain("set -g @resurrect-dir '$RESURRECT_DIR'");
+    expect(script).toContain("已添加 tmux-resurrect 插件，保存目录: $RESURRECT_DIR");
+    expect(script).toContain("dracula/tmux");
+    expect(script).toContain("tmux-plugin-vim-navigator");
+    expect(script).toContain("christoomey/vim-tmux-navigator");
+    expect(script).toContain("dot_sudo apt-get update -qq");
+    expect(script).toContain("command -v tmux");
+    expect(script).toContain("tmux -V");
+    expect(script).toContain("更新 TPM（镜像）");
+    expect(script).toContain("TPM 更新失败；将继续使用本地已有 TPM。");
+    expect(script).toContain("dot_git_clone_with_fallback \"$TPM_REPO\" \"$TPM_DIR\" --depth 1");
+    expect(script).toContain("TPM_INSTALLER=\"$TPM_DIR/bin/install_plugins\"");
+    expect(script).toContain("export TMUX_PLUGIN_MANAGER_PATH=\"$TPM_PATH\"");
+    expect(script).toContain("tmux -L \"$TPM_SOCKET\" run-shell \"$TPM_INSTALLER\"");
+    expect(script).toContain("请启动 tmux 后按 prefix + I 手动安装插件");
+    expect(script).toContain("TPM install_plugins 不存在或不可执行");
+    expect(script).not.toContain("install_plugins\" 2>/dev/null || true");
+    expect(script).toContain("https://gh.ddlc.top/");
+    expect(script).toContain("https://gh.llkk.cc/");
+    expect(script).toContain("https://ghfast.top/");
+    expect(script).toContain("https://gh-proxy.com/");
+    expect(script).toContain("https://ghproxy.net/");
+    expect(script).toContain("https://hub.gitmirror.com/");
+    expect(script).toContain("DOT_DEPS['tmux-plugin-catppuccin']='tmux-tpm tmux-font-jetbrainsmono'");
+    expect(script).toContain("DOT_HIDDEN['tmux-font-jetbrainsmono']='1'");
+    expect(script).toContain("DOT_CHILDREN['tmux-install']='tmux-install-apt tmux-install-source tmux-install-recommended'");
+    expect(script).toContain("DOT_LABELS['tmux-install-recommended']='安装推荐tmux安装配置'");
+    expect(script).toContain("DOT_POST['tmux-install-recommended']='1'");
+    expect(script).toContain("DOT_END_FLOW['tmux-install-recommended']='1'");
+    expect(script).toContain('if [[ "${DOT_END_FLOW[$choice]:-0}" == "1" ]]; then');
+    expect(script).toContain("DOT_GITHUB_MIRROR_TESTED=0");
+    expect(script).toContain("if [[ \"${DOT_GITHUB_MIRROR_TESTED:-0}\" == \"1\" ]]");
+    expect(script).toContain("$'\\eOD'");
+    expect(script).toContain("jimeh/tmuxifier");
+    expect(script).toContain("#{E:@catppuccin_status_application}");
+    expect(script).toContain("set -g prefix C-Space");
+    expect(script).toContain("$'\\eOD'");
+    expect(script).toContain("DOT_GITHUB_SELECTED_PREFIX=");
+    expect(script).toContain("DOT_GITHUB_ORDERED_PREFIXES=()");
+    expect(script).toContain("dot_github_ordered_prefixes()");
+    expect(script).toContain("dot_github_url()");
+    expect(script).toContain("dot_git_pull_with_fallback()");
+    expect(script).toContain("DOT_LABELS['tmux-github-mirror']='GitHub 加速源'");
+    expect(script).toContain("DOT_SNIPPET_FUNCS['tmux-github-mirror']");
+    expect(script).toContain("while IFS= read -r prefix; do");
+    expect(script).toContain('candidate="$(dot_github_url "$prefix" "$url")"');
+    expect(script).toContain('candidate="$(dot_github_url "$prefix" "$repo")"');
+    expect(script).toContain('git -C "$repo_dir" remote set-url origin "$candidate"');
+    expect(script).toContain('dot_git_pull_with_fallback "$TPM_DIR" "$TPM_REPO"');
+    expect(script).toContain('dot_download_with_fallback "$NERD_FONT_URL" "$FONT_ZIP"');
+    expect(script).toContain("后续 TPM、源码和字体下载将优先使用该源");
+    expect(script).not.toContain("JetBrainsMono Nerd Font 下载源");
+    expect(script).toContain("https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip");
+    expect(script).toContain("tmux-font-jetbrainsmono");
+    expect(script).not.toContain("tmux-font-skip");
+    expect(script).toContain("tmux-cleanup-sockets");
+    expect(script).toContain("tmux-final-notes");
     expect(script).not.toContain("DOT_CHILDREN['__root']='tmux-install");
   });
 });
