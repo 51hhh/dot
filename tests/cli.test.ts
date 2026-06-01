@@ -21,6 +21,42 @@ function run(args: string[]): { stdout: string; exitCode: number } {
   }
 }
 
+function writeOverlayConfig(dir: string): string {
+  const configPath = path.join(dir, "config.yaml");
+  fs.writeFileSync(path.join(dir, "feature.sh"), "echo feature\n");
+  fs.writeFileSync(
+    configPath,
+    [
+      'name: "Overlay build"',
+      'version: "1.0"',
+      "menu:",
+      '  - id: "feature"',
+      '    label: "Feature"',
+      '    description: "Original description"',
+      '    script: "feature.sh"',
+      "",
+    ].join("\n")
+  );
+  fs.writeFileSync(
+    path.join(dir, "config.plan.json"),
+    JSON.stringify({
+      version: 1,
+      disabled: ["feature"],
+      overrides: {
+        feature: {
+          label: "Feature disabled by overlay",
+          description: "Overlay description",
+          hidden: false,
+          post: true,
+          script: "missing.sh",
+        },
+      },
+    })
+  );
+
+  return configPath;
+}
+
 describe("CLI --select", () => {
   it("selects leaf nodes", () => {
     const { stdout, exitCode } = run([
@@ -131,6 +167,24 @@ describe("CLI plan", () => {
     expect(plan.version).toBe(1);
     expect(plan.nodes.tmux).toBeDefined();
   });
+
+  it("renders sidecar overlay metadata from the same resolved plan path as build", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-plan-overlay-"));
+    try {
+      const configPath = writeOverlayConfig(dir);
+      const { stdout, exitCode } = run(["plan", "--config", configPath, "--format", "json"]);
+
+      expect(exitCode).toBe(0);
+      const plan = JSON.parse(stdout);
+      expect(plan.nodes.feature.label).toBe("Feature disabled by overlay");
+      expect(plan.nodes.feature.description).toBe("Overlay description");
+      expect(plan.nodes.feature.hidden).toBe(true);
+      expect(plan.nodes.feature.post).toBe(true);
+      expect(plan.nodes.feature.script).toBe("feature.sh");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 
@@ -152,40 +206,70 @@ describe("CLI build", () => {
     expect(script).toContain('dot_main "$@"');
   });
 
-  it("applies a saved sidecar plan overlay during standalone build", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-overlay-"));
+  it("supports a noninteractive dry-run plan preview in the generated script", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-dry-run-"));
     try {
       const configPath = path.join(dir, "config.yaml");
       const output = path.join(dir, "dot.sh");
+      fs.writeFileSync(path.join(dir, "base.sh"), "echo base\n");
       fs.writeFileSync(path.join(dir, "feature.sh"), "echo feature\n");
       fs.writeFileSync(
         configPath,
         [
-          'name: "Overlay build"',
+          'name: "Dry run"',
           'version: "1.0"',
           "menu:",
+          '  - id: "base"',
+          '    label: "Base"',
+          '    script: "base.sh"',
           '  - id: "feature"',
           '    label: "Feature"',
           '    script: "feature.sh"',
+          '    deps: ["base"]',
+          '  - id: "post"',
+          '    label: "Post"',
+          '    script: "feature.sh"',
+          '    post: true',
           "",
         ].join("\n")
       );
-      fs.writeFileSync(
-        path.join(dir, "config.plan.json"),
-        JSON.stringify({
-          version: 1,
-          disabled: ["feature"],
-          overrides: {
-            feature: {
-              label: "Feature disabled by overlay",
-              description: "Overlay description",
-              hidden: false,
-              post: true,
-              script: "missing.sh",
-            },
-          },
-        })
-      );
+
+      const { exitCode } = run(["build", "--config", configPath, "--output", output, "--quiet"]);
+      expect(exitCode).toBe(0);
+      execFileSync("bash", ["-n", output]);
+
+      const result = execFileSync("bash", [output, "--dry-run-plan", "--select", "feature", "post"], {
+        encoding: "utf-8",
+        cwd: dir,
+      });
+
+      expect(result).toContain("Resolved execution plan");
+      expect(result).toContain("Normal steps");
+      expect(result).toContain("Post steps");
+      expect(result).toContain("[base]");
+      expect(result).toContain("[feature]");
+      expect(result).toContain("[post]");
+      expect(result).not.toContain("echo base");
+      expect(result).not.toContain("echo feature");
+
+      const baseIndex = result.indexOf("[base]");
+      const featureIndex = result.indexOf("[feature]");
+      const postHeadingIndex = result.indexOf("Post steps");
+      const postIndex = result.indexOf("[post]");
+      expect(baseIndex).toBeGreaterThan(-1);
+      expect(featureIndex).toBeGreaterThan(baseIndex);
+      expect(postHeadingIndex).toBeGreaterThan(featureIndex);
+      expect(postIndex).toBeGreaterThan(postHeadingIndex);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("applies a saved sidecar plan overlay during standalone build", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-overlay-"));
+    try {
+      const configPath = writeOverlayConfig(dir);
+      const output = path.join(dir, "dot.sh");
 
       const { exitCode } = run(["build", "--config", configPath, "--output", output, "--quiet"]);
 
@@ -197,6 +281,87 @@ describe("CLI build", () => {
       expect(script).toContain("DOT_POST['feature']='1'");
       expect(script).toContain("echo feature");
       execFileSync("bash", ["-n", output]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("validates sidecar plan overlay changes before standalone build", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-overlay-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      const output = path.join(dir, "dot.sh");
+      fs.writeFileSync(path.join(dir, "base.sh"), "echo base\n");
+      fs.writeFileSync(path.join(dir, "feature.sh"), "echo feature\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Overlay build"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "base"',
+          '    label: "Base"',
+          '    script: "base.sh"',
+          '  - id: "feature"',
+          '    label: "Feature"',
+          '    script: "feature.sh"',
+          '    deps: ["base"]',
+          "",
+        ].join("\n")
+      );
+      fs.writeFileSync(
+        path.join(dir, "config.plan.json"),
+        JSON.stringify({
+          version: 1,
+          overrides: {
+            base: {
+              post: true,
+            },
+          },
+        })
+      );
+
+      const { exitCode } = run(["build", "--config", configPath, "--output", output, "--quiet"]);
+
+      expect(exitCode).toBe(1);
+      expect(fs.existsSync(output)).toBe(false);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails hard when resolved plan validation reports an error", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-plan-error-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      const output = path.join(dir, "dot.sh");
+      fs.writeFileSync(path.join(dir, "a.sh"), "echo a\n");
+      fs.writeFileSync(path.join(dir, "b.sh"), "echo b\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Plan validation"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "a"',
+          '    label: "A"',
+          '    script: "a.sh"',
+          '    deps: ["b"]',
+          '  - id: "b"',
+          '    label: "B"',
+          '    script: "b.sh"',
+          '    deps: ["a"]',
+          "",
+        ].join("\n")
+      );
+
+      const planResult = run(["plan", "--config", configPath, "--format", "text"]);
+      expect(planResult.exitCode).toBe(0);
+      expect(planResult.stdout).toContain("error: circular-dependency");
+
+      const buildResult = run(["build", "--config", configPath, "--output", output, "--quiet"]);
+      expect(buildResult.exitCode).toBe(1);
+      expect(fs.existsSync(output)).toBe(false);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }

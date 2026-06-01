@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { assemble } from "../src/generator/assembler.js";
+import { serializeStandaloneData } from "../src/generator/standalone/data.js";
 import { assembleStandalone, bashFunctionNameForId } from "../src/generator/standalone-assembler.js";
 import { loadConfig } from "../src/loader/loader.js";
 import type { Config } from "../src/loader/schema.js";
@@ -43,6 +44,17 @@ ${command}`,
       timeout: 5000,
     }
   );
+}
+
+function expectBashSyntaxValid(script: string) {
+  const result = spawnSync("bash", ["-n"], {
+    encoding: "utf-8",
+    input: script,
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || "Generated bash syntax check failed");
+  }
 }
 
 describe("assemble", () => {
@@ -229,6 +241,61 @@ describe("assemble", () => {
 
 
 describe("assembleStandalone", () => {
+  it("serializes standalone menu data independently", () => {
+    const child: Config["menu"][number] = {
+      id: "child",
+      label: "Child",
+      description: "Child description",
+      script: "child.sh",
+      deps: ["dependency"],
+      prompt: { type: "key", var: "prefix", label: "Record prefix" },
+      endFlow: true,
+    };
+    const dependency: Config["menu"][number] = {
+      id: "dependency",
+      label: "Dependency",
+      script: "dependency.sh",
+      hidden: true,
+      post: true,
+    };
+    const parent: Config["menu"][number] = {
+      id: "parent",
+      label: "Parent",
+      mode: "single",
+      children: [child, dependency],
+    };
+    const config: Config = {
+      name: "Standalone Data",
+      version: "1.0",
+      menuMode: "flow",
+      output: { filename: "dot.sh", dir: "." },
+      menu: [parent],
+    };
+    const allNodes = new Map([
+      ["parent", parent],
+      ["child", child],
+      ["dependency", dependency],
+    ]);
+    const snippetFunctions = new Map([
+      ["child", "dot_run_child_abc"],
+      ["dependency", "dot_run_dependency_def"],
+    ]);
+
+    const result = serializeStandaloneData({ config, allNodes, snippetFunctions });
+
+    expect(result).toContain("DOT_TITLE='Standalone Data'");
+    expect(result).toContain("DOT_CHILDREN['__root']='parent'");
+    expect(result).toContain("DOT_MODES['parent']='single'");
+    expect(result).toContain("DOT_DEPS['child']='dependency'");
+    expect(result).toContain("DOT_PROMPT_TYPES['child']='key'");
+    expect(result).toContain("DOT_PROMPT_VARS['child']='prefix'");
+    expect(result).toContain("DOT_PROMPT_LABELS['child']='Record prefix'");
+    expect(result).toContain("DOT_END_FLOW['child']='1'");
+    expect(result).toContain("DOT_HIDDEN['dependency']='1'");
+    expect(result).toContain("DOT_POST['dependency']='1'");
+    expect(result).toContain("DOT_SNIPPET_FUNCS['child']='dot_run_child_abc'");
+  });
+
   it("generates a self-contained interactive bash script", () => {
     const dir = tmpDir();
     const scriptPath = writeTmpFile(dir, "a.sh", "echo standalone");
@@ -252,6 +319,7 @@ describe("assembleStandalone", () => {
     expect(result).toContain("DOT_CHILDREN['__root']='a'");
     expect(result).toContain("echo standalone");
     expect(result).toContain('dot_main "$@"');
+    expectBashSyntaxValid(result);
 
     fs.rmSync(dir, { recursive: true });
   });
@@ -569,6 +637,59 @@ describe("assembleStandalone", () => {
       expect(generated).toContain("printf '%s");
       expect(generated).toContain('"${ordered[@]}"');
       expect(generated).toContain("printf '%s%s' \"$prefix\" \"$url\"");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints a noninteractive dry-run plan with dependencies before post steps", () => {
+    const dir = tmpDir();
+
+    try {
+      const dependencyPath = writeTmpFile(dir, "dependency.sh", "echo dependency");
+      const featurePath = writeTmpFile(dir, "feature.sh", "echo feature");
+      const postPath = writeTmpFile(dir, "post.sh", "echo post");
+      const config: Config = {
+        name: "dot",
+        version: "1.0",
+        output: { filename: "dot.sh", dir },
+        menu: [
+          { id: "dependency", label: "Dependency", script: dependencyPath },
+          { id: "feature", label: "Feature", script: featurePath, deps: ["dependency"] },
+          { id: "post", label: "Post", script: postPath, post: true },
+        ],
+      };
+
+      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      expectBashSyntaxValid(generated);
+
+      const scriptPath = path.join(dir, "dot.sh");
+      fs.writeFileSync(scriptPath, generated);
+      const result = spawnSync("bash", [scriptPath, "--dry-run-plan", "--select", "feature", "post"], {
+        cwd: dir,
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("Resolved execution plan");
+      expect(result.stdout).toContain("Normal steps");
+      expect(result.stdout).toContain("Post steps");
+      expect(result.stdout).toContain("[dependency]");
+      expect(result.stdout).toContain("[feature]");
+      expect(result.stdout).toContain("[post]");
+      expect(result.stdout).not.toContain("echo dependency");
+      expect(result.stdout).not.toContain("echo feature");
+      expect(result.stdout).not.toContain("echo post");
+
+      const dependencyIndex = result.stdout.indexOf("[dependency]");
+      const featureIndex = result.stdout.indexOf("[feature]");
+      const postHeadingIndex = result.stdout.indexOf("Post steps");
+      const postIndex = result.stdout.indexOf("[post]");
+      expect(dependencyIndex).toBeGreaterThan(-1);
+      expect(featureIndex).toBeGreaterThan(dependencyIndex);
+      expect(postHeadingIndex).toBeGreaterThan(featureIndex);
+      expect(postIndex).toBeGreaterThan(postHeadingIndex);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
