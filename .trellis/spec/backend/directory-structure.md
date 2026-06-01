@@ -22,7 +22,9 @@ src/
 ├── loader/               # config parsing, Zod schema, semantic validation
 ├── utils/                # graph/dependency helpers and shared utilities
 ├── generator/            # template rendering, script assembly, shell validation
-└── menu/                 # developer-side interactive CLI menu
+├── menu/                 # developer-side interactive CLI menu
+├── planner/              # InstallationPlan graph model, overlays, validation, renderers
+└── studio/               # developer-side React Flow Plan Canvas and local server
 
 configs/                  # example YAML configs
 templates/                # shell snippets referenced by configs
@@ -70,10 +72,23 @@ Do not put graph traversal, template rendering, or bash serialization logic here
 - Keep build-time template rendering separate from generated runtime bash logic.
 - Validate generated scripts with `bash -n`.
 
+### `src/planner/`
+
+- Own `InstallationPlan` graph contracts.
+- Keep structure edges (`single`, `multi`, `flow`, `post`) separate from auxiliary `dependency` edges.
+- Keep flow edges linear for visible non-hidden, non-post steps.
+- Do not make hidden nodes or post nodes advance the visible flow spine.
+
 ### `src/menu/`
 
 - Current Node.js interactive menu only.
 - Do not reuse it directly inside generated `dot.sh`; generated scripts need their own bash TUI runtime.
+
+### `src/studio/`
+
+- Developer-side Plan Canvas only.
+- Consume `InstallationPlan` data instead of re-parsing YAML.
+- Keep automatic layout based on planner structure edges, not legacy `child` edges.
 
 ## Naming Conventions
 

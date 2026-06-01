@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const PromptSchema = z.object({
-  type: z.enum(["key", "text"]),
+  type: z.enum(["key", "key-compose", "text"]),
   var: z.string().min(1),
   label: z.string().min(1),
 });
@@ -19,6 +19,7 @@ export const MenuItemSchema: z.ZodType<MenuItem> = z.lazy(() =>
     mode: z.enum(["single", "multi", "flow"]).optional(),
     hidden: z.boolean().optional(),
     post: z.boolean().optional(),
+    endFlow: z.boolean().optional(),
   })
 );
 
@@ -44,7 +45,7 @@ export interface MenuItem {
   script?: string;
   vars?: Record<string, string>;
   prompt?: {
-    type: "key" | "text";
+    type: "key" | "key-compose" | "text";
     var: string;
     label: string;
   };
@@ -56,6 +57,8 @@ export interface MenuItem {
   hidden?: boolean;
   /** If true, this node runs after all non-post nodes regardless of topo order */
   post?: boolean;
+  /** If true, selecting this item ends the containing flow and proceeds to plan preview */
+  endFlow?: boolean;
 }
 
 export type Config = z.infer<typeof ConfigSchema>;

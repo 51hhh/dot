@@ -4,7 +4,10 @@
 
 ## Overview
 
-There are no React/Vue components. Treat reusable terminal UI pieces as “components”: menu renderers, prompt helpers, banners, and generated bash TUI functions.
+Treat reusable UI pieces as components across both surfaces:
+
+- terminal UI pieces: menu renderers, prompt helpers, banners, and generated bash TUI functions
+- developer Studio pieces: React Flow nodes, handles, legends, and canvas layout helpers
 
 ## Current Menu Component Pattern
 
@@ -27,6 +30,28 @@ The self-contained `dot.sh` MVP should generate generic bash TUI helpers for:
 
 Domain-specific labels and ids should be generated as data, not hardcoded into runtime helpers.
 
+## Plan Canvas Pattern
+
+The developer-side Studio renders `InstallationPlan` as a left-to-right graph:
+
+- Nodes use a left target handle and a right source handle.
+- `flow` edges form the main left-to-right spine.
+- `single` and `multi` edges branch from a parent to selectable options.
+- `dependency` edges are auxiliary and must not drive automatic layout.
+- `post` edges are visually distinct from normal structure and execution remains post-ordered.
+- Keep a compact legend in the toolbar or canvas area; do not reintroduce a right inspector for basic edge meaning.
+- Keep Plan Canvas cards at 8px radius unless a shared design system changes that rule.
+
+Edge colors are part of the visual contract:
+
+| Edge | Meaning | Color |
+|------|---------|-------|
+| `single` | exclusive branch | `#38bdf8` |
+| `multi` | selectable group branch | `#34d399` |
+| `flow` | linear process step | `#a78bfa` |
+| `dependency` | execution dependency | `#fb7185` |
+| `post` | post-execution item | `#facc15` |
+
 ## Accessibility / Terminal Compatibility
 
 - Provide numeric fallback or clear key hints where possible.
@@ -39,3 +64,4 @@ Domain-specific labels and ids should be generated as data, not hardcoded into r
 - Mixing menu rendering with graph/dependency logic.
 - Leaving terminal cursor hidden after Ctrl-C.
 - Printing extra text in modes intended to produce machine-consumable script output.
+- Driving Studio layout from legacy `child` edges instead of `single` / `multi` / `flow` / `post` structure edges.

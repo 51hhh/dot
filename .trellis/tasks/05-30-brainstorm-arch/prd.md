@@ -93,6 +93,14 @@ bash dot.sh
 
 **Why**: 先把可生成、可执行、可测试的核心闭环跑通。
 
+### 6. Developer-side editable Plan Canvas
+
+**Decision**: 在开发者侧引入 `InstallationPlan` 中间数据结构，并建设 PinCanvas 类可编辑 Canvas。AI 或开发者先生成 YAML/Plan，再通过 Canvas 查看菜单树、安装路径、依赖边、`flow` 顺序、`post` 后置节点和最终执行计划；允许在 Canvas 中修改流程后再构建发布用 `dot.sh`。
+
+**Why**: 当前安装逻辑、显示顺序、依赖顺序和 post 顺序分散在 YAML 中，复杂场景下难以检查和调整。Plan Canvas 可以作为 AI 生成后的人工审查与修改中间件，降低复杂安装流程维护成本，同时不影响最终用户侧 `wget + bash` 的零依赖体验。
+
+**Scope**: 该 Canvas 属于开发者工具链，不进入最终生成的 `dot.sh` runtime。第一阶段可以直接走 Plan Core + 可编辑 Canvas，但需要将 YAML/Plan 回写、执行顺序解释和校验作为核心设计风险处理。
+
 ## Acceptance Criteria
 
 - [ ] `npm run build` 后可以生成 `dist/dot.sh`。
@@ -104,6 +112,10 @@ bash dot.sh
 - [ ] `post` 节点总是在普通节点之后执行。
 - [ ] 确认执行前展示完整执行计划。
 - [ ] 执行完成后输出成功/失败汇总。
+- [ ] 开发者侧存在 `InstallationPlan` 中间结构，可表达菜单树、依赖边、flow 顺序、post 节点、prompt 和最终执行计划。
+- [ ] 开发者侧 Canvas 可以加载 Plan，展示并编辑节点、顺序、依赖和 post 信息。
+- [ ] Canvas 修改后的流程可以保存并重新参与 `dot.sh` 构建。
+- [ ] Canvas/Plan 能明确区分显示顺序、依赖顺序和最终执行顺序。
 
 ## Out of Scope
 
@@ -113,7 +125,8 @@ bash dot.sh
 - 并行执行安装项。
 - 远程模板包管理。
 - 插件生态系统。
-- `dialog` / `whiptail` / `gum` / `fzf` 等外部 TUI 依赖。
+- 将 Canvas UI 打包进最终用户运行的 `dot.sh`。
+- 把最终用户 runtime 改成 Node/Web/桌面应用。
 - 非 bash shell 支持。
 
 ## Definition of Done

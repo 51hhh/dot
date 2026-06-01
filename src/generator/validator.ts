@@ -17,7 +17,8 @@ export function validateScript(content: string): string | null {
   } catch (err: unknown) {
     if (err && typeof err === "object" && "stderr" in err) {
       const e = err as { stderr?: string; message?: string };
-      return e.stderr?.trim() ?? e.message ?? "validation failed";
+      const stderr = e.stderr?.trim();
+      return stderr || e.message || "validation failed";
     }
     return err instanceof Error ? err.message : "validation failed";
   } finally {

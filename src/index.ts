@@ -9,6 +9,11 @@ import { isLeaf } from "./menu/tree.js";
 import { assemble } from "./generator/assembler.js";
 import { assembleStandalone } from "./generator/standalone-assembler.js";
 import { validateScript } from "./generator/validator.js";
+import { buildInstallationPlan } from "./planner/index.js";
+import { applyPlanOverlayToConfig, loadPlanOverlay, planOverlayPathForConfig } from "./planner/overlay.js";
+import { renderPlanJson } from "./planner/render-json.js";
+import { renderPlanTree } from "./planner/render-tree.js";
+import { startStudio } from "./studio/server.js";
 
 const program = new Command();
 
@@ -42,6 +47,33 @@ program
   .action((opts) => {
     try {
       runBuild(opts);
+    } catch (err: unknown) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("plan")
+  .description("Render the resolved installation plan")
+  .requiredOption("-c, --config <path>", "Path to config file (YAML/JSON)")
+  .option("--format <format>", "Output format: text or json", "text")
+  .option("--write <path>", "Write the JSON plan to disk")
+  .action((opts) => {
+    try {
+      runPlan(opts);
+    } catch (err: unknown) {
+      handleError(err);
+    }
+  });
+
+program
+  .command("studio")
+  .description("Open the local plan canvas studio")
+  .requiredOption("-c, --config <path>", "Path to config file (YAML/JSON)")
+  .option("--port <port>", "Studio port", "5177")
+  .action(async (opts) => {
+    try {
+      await runStudio(opts);
     } catch (err: unknown) {
       handleError(err);
     }
@@ -156,7 +188,9 @@ function runBuild(opts: {
   output?: string;
   quiet?: boolean;
 }) {
-  const config = loadConfig(opts.config);
+  const loadedConfig = loadConfig(opts.config);
+  const overlay = loadPlanOverlay(planOverlayPathForConfig(opts.config));
+  const config = applyPlanOverlayToConfig(loadedConfig, overlay);
   const allNodes = flattenNodes(config.menu);
   const warnings: string[] = [];
   const script = assembleStandalone({
@@ -185,6 +219,40 @@ function runBuild(opts: {
   }
 }
 
+function runPlan(opts: {
+  config: string;
+  format?: string;
+  write?: string;
+}) {
+  const config = loadConfig(opts.config);
+  const plan = buildInstallationPlan(config);
+  const format = opts.format ?? "text";
+
+  if (opts.write) {
+    const json = renderPlanJson(plan);
+    fs.mkdirSync(path.dirname(path.resolve(opts.write)), { recursive: true });
+    fs.writeFileSync(path.resolve(opts.write), `${json}\n`);
+  }
+
+  if (format === "json") {
+    process.stdout.write(`${renderPlanJson(plan)}\n`);
+    return;
+  }
+  if (format !== "text") {
+    throw new Error(`Unsupported plan format: ${format}`);
+  }
+  process.stdout.write(renderPlanTree(plan));
+}
+
+async function runStudio(opts: {
+  config: string;
+  port?: string;
+}) {
+  const port = Number.parseInt(opts.port ?? "5177", 10);
+  const server = await startStudio({ configPath: opts.config, port });
+  console.log(c.success(`\n  ✓ Plan Canvas: http://127.0.0.1:${server.port}/studio\n`));
+}
+
 function resolveOutputPath(
   configPath: string,
   outputPath: string | undefined,
@@ -201,7 +269,7 @@ function writeScript(outputPath: string, script: string): void {
   fs.writeFileSync(outputPath, script, { mode: 0o755 });
 }
 
-if (process.argv.length > 2 && process.argv[2] !== "build" && process.argv[2] !== "generate") {
+if (process.argv.length > 2 && !["build", "generate", "plan", "studio"].includes(process.argv[2])) {
   process.argv.splice(2, 0, "generate");
 }
 
