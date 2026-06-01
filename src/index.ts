@@ -9,8 +9,11 @@ import { isLeaf } from "./menu/tree.js";
 import { assemble } from "./generator/assembler.js";
 import { assembleStandalone } from "./generator/standalone-assembler.js";
 import { validateScript } from "./generator/validator.js";
-import { buildInstallationPlan } from "./planner/index.js";
-import { applyPlanOverlayToConfig, loadPlanOverlay, planOverlayPathForConfig } from "./planner/overlay.js";
+import {
+  formatPlanDiagnostics,
+  hasPlanValidationErrors,
+  resolveInstallationPlan,
+} from "./planner/index.js";
 import { renderPlanJson } from "./planner/render-json.js";
 import { renderPlanTree } from "./planner/render-tree.js";
 import { startStudio } from "./studio/server.js";
@@ -188,15 +191,17 @@ function runBuild(opts: {
   output?: string;
   quiet?: boolean;
 }) {
-  const loadedConfig = loadConfig(opts.config);
-  const overlay = loadPlanOverlay(planOverlayPathForConfig(opts.config));
-  const config = applyPlanOverlayToConfig(loadedConfig, overlay);
-  const allNodes = flattenNodes(config.menu);
+  const resolved = resolveInstallationPlan(opts.config);
+  if (hasPlanValidationErrors(resolved.diagnostics)) {
+    throw new Error(`Installation plan validation failed:\n${formatPlanDiagnostics(resolved.diagnostics)}`);
+  }
+
   const warnings: string[] = [];
   const script = assembleStandalone({
-    config,
+    config: resolved.config,
     configPath: opts.config,
-    allNodes,
+    allNodes: resolved.allNodes,
+    plan: resolved.plan,
     warnings,
   });
 
@@ -211,6 +216,10 @@ function runBuild(opts: {
   if (!opts.quiet) {
     console.log(c.success(`
   ✓ 自包含脚本已生成: ${resolvedOutput}`));
+    for (const diagnostic of resolved.diagnostics) {
+      if (diagnostic.level === "info") continue;
+      console.log(c.warn(`  ⚠ ${formatPlanDiagnostics([diagnostic])}`));
+    }
     for (const w of warnings) {
       console.log(c.warn(`  ⚠ ${w}`));
     }
@@ -224,8 +233,7 @@ function runPlan(opts: {
   format?: string;
   write?: string;
 }) {
-  const config = loadConfig(opts.config);
-  const plan = buildInstallationPlan(config);
+  const { plan } = resolveInstallationPlan(opts.config);
   const format = opts.format ?? "text";
 
   if (opts.write) {

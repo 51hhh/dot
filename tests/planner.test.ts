@@ -4,10 +4,18 @@ import os from "node:os";
 import path from "node:path";
 import { loadConfig } from "../src/loader/loader.js";
 import type { Config } from "../src/loader/schema.js";
-import { applyPlanOverlay, loadPlanOverlay, savePlanOverlay } from "../src/planner/overlay.js";
-import { buildInstallationPlan } from "../src/planner/index.js";
+import {
+  applyPlanOverlay,
+  loadPlanOverlay,
+  mergePlanOverlay,
+  parsePlanOverlayPayload,
+  PlanOverlayValidationError,
+  savePlanOverlay,
+} from "../src/planner/overlay.js";
+import { buildInstallationPlan, resolveInstallationPlan } from "../src/planner/index.js";
 import { renderPlanTree } from "../src/planner/render-tree.js";
 import type { InstallationPlan, PlanEdge } from "../src/planner/types.js";
+import { startStudio } from "../src/studio/server.js";
 
 describe("buildInstallationPlan", () => {
   it("models single, multi, and flow structures distinctly", () => {
@@ -91,6 +99,81 @@ describe("buildInstallationPlan", () => {
     }
   });
 
+  it("rejects unsafe overlay field types at the file boundary", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-overlay-"));
+    try {
+      const overlayPath = path.join(dir, "dot.plan.json");
+      fs.writeFileSync(
+        overlayPath,
+        JSON.stringify({
+          version: 1,
+          overrides: {
+            "tmux-install-apt": {
+              label: ["not", "a", "label"],
+              mode: "shell",
+            },
+          },
+        })
+      );
+
+      expect(() => loadPlanOverlay(overlayPath)).toThrow(/Invalid plan overlay/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("validates Studio overlay API payloads before merge", () => {
+    expect(() => parsePlanOverlayPayload({})).toThrow(PlanOverlayValidationError);
+    expect(() => parsePlanOverlayPayload({ patch: { version: 1, positions: { tmux: { x: Number.POSITIVE_INFINITY, y: 0 } } } }))
+      .toThrow(/Invalid plan overlay patch/);
+    expect(parsePlanOverlayPayload({ patch: { version: 1, disabled: ["tmux"] } })).toEqual({
+      version: 1,
+      disabled: ["tmux"],
+    });
+  });
+
+  it("merges Studio overlay API patches without mutating the current overlay", () => {
+    const current = {
+      version: 1 as const,
+      positions: {
+        tmux: { x: 10, y: 20 },
+      },
+      disabled: ["tmux-prefix", "tmux-status"],
+      overrides: {
+        "tmux-prefix": { hidden: false },
+      },
+    };
+    const patch = {
+      version: 1 as const,
+      positions: {
+        tmux: { x: 30, y: 40 },
+        "tmux-options": { x: 50, y: 60 },
+      },
+      disabled: ["tmux-status", "tmux-options"],
+      overrides: {
+        "tmux-options": { label: "Options", hidden: false },
+      },
+    };
+
+    const merged = mergePlanOverlay(current, patch);
+
+    expect(merged).toEqual({
+      version: 1,
+      positions: {
+        tmux: { x: 30, y: 40 },
+        "tmux-options": { x: 50, y: 60 },
+      },
+      disabled: ["tmux-prefix", "tmux-status", "tmux-options"],
+      overrides: {
+        "tmux-prefix": { hidden: false },
+        "tmux-options": { label: "Options", hidden: false },
+      },
+    });
+    expect(current.positions.tmux).toEqual({ x: 10, y: 20 });
+    expect(current.disabled).toEqual(["tmux-prefix", "tmux-status"]);
+    expect(current.overrides["tmux-prefix"]).toEqual({ hidden: false });
+  });
+
   it("applies an overlay to positions and disabled nodes", () => {
     const config: Config = {
       name: "dot",
@@ -122,6 +205,66 @@ describe("buildInstallationPlan", () => {
       expect(merged.nodes["tmux-install-apt"].hidden).toBe(true);
     } finally {
       fs.rmSync(overlayDir, { recursive: true, force: true });
+    }
+  });
+
+  it("resolves configs through the overlay-applied plan source of truth", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-resolve-plan-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      fs.writeFileSync(path.join(dir, "setup.sh"), "echo setup\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Resolved plan"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "feature"',
+          '    label: "Feature"',
+          '    description: "Original description"',
+          '    script: "setup.sh"',
+          "",
+        ].join("\n")
+      );
+      fs.writeFileSync(
+        path.join(dir, "config.plan.json"),
+        JSON.stringify({
+          version: 1,
+          positions: { feature: { x: 42, y: 84 } },
+          disabled: ["feature"],
+          overrides: {
+            feature: {
+              label: "Feature from overlay",
+              description: "Overlay description",
+              hidden: false,
+              mode: "flow",
+              script: "missing.sh",
+            },
+          },
+        })
+      );
+
+      const resolved = resolveInstallationPlan(configPath);
+      const feature = resolved.allNodes.get("feature");
+
+      expect(resolved.loadedConfig.menu[0].label).toBe("Feature");
+      expect(feature?.label).toBe("Feature from overlay");
+      expect(feature?.description).toBe("Overlay description");
+      expect(feature?.hidden).toBe(true);
+      expect(feature?.script).toBe("setup.sh");
+      expect(resolved.plan.nodes.feature).toEqual(
+        expect.objectContaining({
+          label: "Feature from overlay",
+          description: "Overlay description",
+          hidden: true,
+          mode: "flow",
+          position: { x: 42, y: 84 },
+          script: "setup.sh",
+        })
+      );
+      expect(resolved.diagnostics).toEqual([]);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -230,6 +373,140 @@ describe("buildInstallationPlan", () => {
     expect(plan.edges).toContainEqual({ from: "install", to: "notes", type: "post" });
     expect(plan.edges).toContainEqual({ from: "install", to: "finalize", type: "flow" });
     expect(plan.edges).not.toContainEqual({ from: "notes", to: "finalize", type: "flow" });
+  });
+
+  it("handles invalid and valid Studio plan overlay API writes", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-studio-api-"));
+    const configPath = path.join(dir, "dot.yaml");
+    fs.writeFileSync(
+      configPath,
+      [
+        "name: dot",
+        "version: '1.0'",
+        "menu:",
+        "  - id: tmux",
+        "    label: Tmux",
+        "    children:",
+        "      - id: tmux-install-apt",
+        "        label: APT",
+        "        script: templates/tmux/install-apt.sh",
+        "",
+      ].join("\n")
+    );
+
+    const server = await startStudio({ configPath, port: 0 });
+    try {
+      const baseUrl = `http://127.0.0.1:${server.port}`;
+      const invalidJson = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: "{",
+      });
+      expect(invalidJson.status).toBe(400);
+      await expect(invalidJson.json()).resolves.toMatchObject({
+        error: { code: "invalid_json" },
+      });
+
+      const oversized = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({ patch: { version: 1, disabled: ["x".repeat(256 * 1024)] } }),
+      });
+      expect(oversized.status).toBe(413);
+      await expect(oversized.json()).resolves.toMatchObject({
+        error: { code: "body_too_large" },
+      });
+
+      const missingPatch = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({}),
+      });
+      expect(missingPatch.status).toBe(400);
+      await expect(missingPatch.json()).resolves.toMatchObject({
+        error: { code: "missing_patch" },
+      });
+
+      const invalidOverlay = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({ patch: { version: 1, positions: { "tmux-install-apt": { x: "left", y: 0 } } } }),
+      });
+      expect(invalidOverlay.status).toBe(422);
+      await expect(invalidOverlay.json()).resolves.toMatchObject({
+        error: { code: "invalid_overlay" },
+      });
+
+      const validPatch = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({
+          patch: {
+            version: 1,
+            positions: { "tmux-install-apt": { x: 320, y: 180 } },
+            disabled: ["tmux-install-apt"],
+          },
+        }),
+      });
+      expect(validPatch.status).toBe(204);
+
+      const plan = await fetch(`${baseUrl}/api/plan`);
+      expect(await plan.json()).toMatchObject({
+        nodes: {
+          "tmux-install-apt": {
+            position: { x: 320, y: 180 },
+            hidden: true,
+          },
+        },
+      });
+      expect(JSON.parse(fs.readFileSync(path.join(dir, "dot.plan.json"), "utf-8"))).toEqual({
+        version: 1,
+        positions: { "tmux-install-apt": { x: 320, y: 180 } },
+        disabled: ["tmux-install-apt"],
+      });
+    } finally {
+      await server.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps Studio plan state unchanged when overlay save fails", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-studio-save-failure-"));
+    const configPath = path.join(dir, "dot.yaml");
+    fs.writeFileSync(
+      configPath,
+      [
+        "name: dot",
+        "version: '1.0'",
+        "menu:",
+        "  - id: tmux-install-apt",
+        "    label: APT",
+        "    script: templates/tmux/install-apt.sh",
+        "",
+      ].join("\n")
+    );
+
+    const server = await startStudio({ configPath, port: 0 });
+    fs.mkdirSync(path.join(dir, "dot.plan.json"));
+    try {
+      const baseUrl = `http://127.0.0.1:${server.port}`;
+      const response = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({
+          patch: {
+            version: 1,
+            disabled: ["tmux-install-apt"],
+          },
+        }),
+      });
+
+      expect(response.status).toBe(500);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "save_failed" },
+      });
+
+      const plan = await fetch(`${baseUrl}/api/plan`);
+      const planJson = await plan.json();
+      expect(planJson.nodes["tmux-install-apt"].hidden).toBeUndefined();
+    } finally {
+      await server.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("renders the plan tree from structure edges", () => {
