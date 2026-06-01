@@ -218,6 +218,15 @@ declare -A DOT_PLAN_ADDED=()
 declare -A DOT_RESULTS=()
 declare -A DOT_VARS=()
 
+dot_get_var_or_default() {
+  local var="$1" fallback="@{2:-}"
+  if [[ -n "@{DOT_VARS[$var]+set}" ]]; then
+    printf '%s' "@{DOT_VARS[$var]}"
+  else
+    printf '%s' "$fallback"
+  fi
+}
+
 restore_terminal() {
   printf '\\033[?25h'
 }
