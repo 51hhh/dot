@@ -198,6 +198,99 @@ setNodes(graph.nodes.map(projectedNodeToReactFlowNode));
 setEdges(graph.edges.map(projectedEdgeToReactFlowEdge));
 ```
 
+## Scenario: Studio draft edge handoff contract
+
+### 1. Scope / Trigger
+
+- Trigger: adding local edge editing, deleting, or export affordances in Plan Canvas Studio.
+- Applies to `src/studio/main.tsx`, `src/studio/studio.css`, `tests/studio.test.ts`, and any future Studio export API.
+
+### 2. Signatures
+
+```ts
+type EditableEdgeType = "single" | "multi" | "flow" | "dependency" | "post";
+
+type DraftEdgeChange = {
+  action: "add" | "remove";
+  from: string;
+  to: string;
+  type: EditableEdgeType;
+};
+
+type AgentDraftExport = {
+  changedOperations: Array<DraftEdgeChange & {
+    fromLabel?: string;
+    toLabel?: string;
+  }>;
+  overlayPatchDraft: {
+    version: 2;
+    dependencies?: {
+      add?: Array<{ from: string; to: string }>;
+      remove?: Array<{ from: string; to: string }>;
+    };
+  };
+  sourceOnlyOperations: DraftEdgeChange[];
+};
+```
+
+### 3. Contracts
+
+- Studio may let users add/delete edges locally for planning, but those semantic changes must not be sent to `PUT /api/plan`.
+- `Save layout` remains positions-only and must continue to send `patch: { version: 1, positions }`.
+- Draft export must include only changed operations, never a full plan dump.
+- Draft edge types must be explicit; never infer `single`, `multi`, `flow`, `dependency`, or `post` from node coordinates.
+- `dependency` add/remove operations can be represented in `overlayPatchDraft.dependencies`.
+- `single`, `multi`, `flow`, and `post` structure edge changes are source-only handoff items. They require `configs/*.yaml` edits and tests, not just overlay writes.
+- Generated agent prompts must tell the agent to modify true source config, update tests, and run project checks.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| User connects node A to node B | Add one local `DraftEdgeChange` with the selected explicit edge type |
+| User connects A to A | Reject the draft edge and keep current changes unchanged |
+| User deletes an existing edge | Add one `remove` draft operation for that typed edge |
+| User deletes a newly added draft edge | Remove the matching `add` draft operation instead of adding a `remove` |
+| User exports with no draft changes | Produce an empty changed-operation prompt or a clear no-change status |
+| User saves layout after draft edits | Persist positions only; semantic draft operations are not saved |
+
+### 5. Good/Base/Bad Cases
+
+- Good: deleting `zsh-plugins -> zsh-plugin-autosuggestions` as `flow` exports a `remove` operation and tells the agent to edit YAML.
+- Good: adding `tmux-tpm -> tmux-plugin-catppuccin` as `dependency` appears under `overlayPatchDraft.dependencies.add`.
+- Base: dragging a node changes only layout positions.
+- Bad: exporting the full `InstallationPlan` when only one edge changed.
+- Bad: writing `flow`/`single`/`multi` edge edits directly into sidecar overlay and assuming build output changed safely.
+- Bad: inferring order from x/y coordinates after a drag.
+
+### 6. Tests Required
+
+- Studio source test: local draft controls exist (`draft-edge-type`, `export-draft`, `clear-draft`).
+- Studio source test: `onConnect` is wired and node connection is enabled.
+- Studio source test: delete key removes edges while node deletion remains blocked by `onNodesChange` filtering.
+- Studio source test: layout save still contains `patch: { version: 1, positions }`.
+- Studio source test: export text includes `changedOperations`, `overlayPatchDraft`, and `sourceOnlyOperations`.
+- Build check: `npm run build` must still produce the Studio bundle.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await fetch("/api/plan", {
+  method: "PUT",
+  body: JSON.stringify({ patch: { version: 2, ordering: inferredFromNodePositions } }),
+});
+```
+
+#### Correct
+
+```ts
+const change = { action: "add", from, to, type: selectedEdgeType };
+setDraftEdgeChanges((current) => [...current, change]);
+setExportText(buildAgentPrompt([change]));
+```
+
 ## Scenario: Generated prompt type contract
 
 ### 1. Scope / Trigger

@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "React/TypeScript implementation constraints for Studio UI changes"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "State handling for local draft changes"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Frontend quality and testing guidance"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Avoid duplicating edge formatting and export logic unnecessarily"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Draft export spans UI, overlay patch shape, and agent prompt contract"}
