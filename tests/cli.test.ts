@@ -265,6 +265,69 @@ describe("CLI build", () => {
     }
   });
 
+  it("supports noninteractive execution in the generated script", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-run-plan-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      const output = path.join(dir, "dot.sh");
+      fs.writeFileSync(path.join(dir, "base.sh"), "echo base-ran\n");
+      fs.writeFileSync(path.join(dir, "feature.sh"), "echo feature-ran\n");
+      fs.writeFileSync(path.join(dir, "fail.sh"), "echo fail-ran\nreturn 7\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Run plan"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "base"',
+          '    label: "Base"',
+          '    script: "base.sh"',
+          '  - id: "feature"',
+          '    label: "Feature"',
+          '    script: "feature.sh"',
+          '    deps: ["base"]',
+          '  - id: "fail"',
+          '    label: "Fail"',
+          '    script: "fail.sh"',
+          "",
+        ].join("\n")
+      );
+
+      const { exitCode } = run(["build", "--config", configPath, "--output", output, "--quiet"]);
+      expect(exitCode).toBe(0);
+      execFileSync("bash", ["-n", output]);
+
+      const result = execFileSync("bash", [output, "--run-plan", "--select", "feature"], {
+        encoding: "utf-8",
+        cwd: dir,
+      });
+
+      expect(result).toContain("Executing plan");
+      expect(result).toContain("base-ran");
+      expect(result).toContain("feature-ran");
+      expect(result).toContain("Summary");
+      expect(result.indexOf("base-ran")).toBeLessThan(result.indexOf("feature-ran"));
+
+      let failureStdout = "";
+      let failureStatus = 0;
+      try {
+        execFileSync("bash", [output, "--run-plan", "--select", "fail"], {
+          encoding: "utf-8",
+          cwd: dir,
+        });
+      } catch (err: unknown) {
+        const e = err as { stdout?: string; status?: number };
+        failureStdout = e.stdout ?? "";
+        failureStatus = e.status ?? 1;
+      }
+      expect(failureStatus).toBe(1);
+      expect(failureStdout).toContain("fail-ran");
+      expect(failureStdout).toContain("Summary");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("applies a saved sidecar plan overlay during standalone build", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-build-overlay-"));
     try {

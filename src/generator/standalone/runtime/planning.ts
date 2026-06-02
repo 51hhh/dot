@@ -99,7 +99,7 @@ dot_known_id() {
   return 1
 }
 
-dot_select_dry_run_item() {
+dot_select_plan_item() {
   local id="$1" leaf
   if ! dot_known_id "$id"; then
     log_error "Unknown menu item id: $id"
@@ -112,7 +112,15 @@ dot_select_dry_run_item() {
   done
 }
 
+dot_select_dry_run_item() {
+  dot_select_plan_item "$1"
+}
+
 dot_print_dry_run_usage() {
   printf 'Usage: bash dot.sh --dry-run-plan --select <ids...>\\n'
+}
+
+dot_print_run_plan_usage() {
+  printf 'Usage: bash dot.sh --run-plan --select <ids...>\\n'
 }`;
 }
