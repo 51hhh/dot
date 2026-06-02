@@ -732,15 +732,24 @@ describe("assembleStandalone", () => {
         menu: [{ id: "noop", label: "Noop", script: scriptPath }],
       };
 
-      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") }).replace(
-        /\ndot_main "\$@"\n$/,
-        "\n"
+      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      const result = runGeneratedBash(
+        dir,
+        generated,
+        `
+DOT_GITHUB_SELECTED_PREFIX="https://selected.example/"
+DOT_GITHUB_ORDERED_PREFIXES=("https://fallback.example/" "https://selected.example/")
+mapfile -t ordered < <(dot_github_ordered_prefixes)
+printf 'first=%s\\nsecond=%s\\nthird=%s\\n' "\${ordered[0]}" "\${ordered[1]}" "\${ordered[2]}"
+printf 'mirrored=%s\\n' "$(dot_github_url "https://selected.example/" "https://github.com/org/repo")"
+`
       );
-      expect(generated).toContain('if [[ -n "${DOT_GITHUB_SELECTED_PREFIX:-}" ]]; then');
-      expect(generated).toContain('ordered+=("$DOT_GITHUB_SELECTED_PREFIX")');
-      expect(generated).toContain("printf '%s");
-      expect(generated).toContain('"${ordered[@]}"');
-      expect(generated).toContain("printf '%s%s' \"$prefix\" \"$url\"");
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("first=https://selected.example/");
+      expect(result.stdout).toContain("second=https://fallback.example/");
+      expect(result.stdout).toContain("third=");
+      expect(result.stdout).toContain("mirrored=https://selected.example/https://github.com/org/repo");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
