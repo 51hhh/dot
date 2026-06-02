@@ -5,6 +5,7 @@ if [[ "${DOT_GITHUB_MIRROR_TESTED:-0}" == "1" ]]; then
 fi
 
 log_info "测速 GitHub 加速源，用于 TPM、源码和字体下载..."
+log_warn "第三方镜像可观察请求并提供下载内容；当前脚本不会校验镜像内容签名或校验和。"
 
 declare -a mirror_labels=()
 declare -a mirror_prefixes=()
@@ -70,7 +71,7 @@ done
 choice_options=("自动选择最快：${mirror_labels[$best_index]} - 延迟 ${mirror_latency[$best_index]}ms，速度 ${mirror_speed[$best_index]} KiB/s")
 choice_options+=("${mirror_options[@]}")
 
-dot_choose_from_array "GitHub 加速源" "后续 TPM、源码和字体下载将优先使用该源" selected_github_mirror "${choice_options[@]}"
+dot_choose_from_array "GitHub 加速源" "镜像是第三方信任来源，直连优先保留为可选项" selected_github_mirror "${choice_options[@]}"
 case "$?" in
   0) ;;
   2)

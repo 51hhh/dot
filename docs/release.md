@@ -82,3 +82,13 @@ bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize
 
 CI also uploads `dist/dot.sh` as the `dot-sh` artifact. Keep Docker smoke
 testing optional until runner support and runtime expectations are stable.
+
+## Mirror Integrity Policy
+
+`dist/dot.sh` may use third-party GitHub mirrors for downloads and git clones.
+Those mirrors are operational fallbacks, not integrity verification. A release
+is acceptable only if the generated script clearly warns users that mirror
+endpoints can observe requests and serve content. Future releases should add
+checksum or signature verification for mirrored archives and plugins before
+claiming mirrored content has the same integrity guarantees as direct origin
+downloads.

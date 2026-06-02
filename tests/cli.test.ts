@@ -436,6 +436,9 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_END_FLOW['tmux-install-recommended']='1'");
     expect(script).toContain('if [[ "${DOT_END_FLOW[$choice]:-0}" == "1" ]]; then');
     expect(script).toContain("DOT_GITHUB_MIRROR_TESTED=0");
+    expect(script).toContain("DOT_GITHUB_MIRROR_TRUST_WARNED=0");
+    expect(script).toContain("第三方镜像可观察请求并提供下载内容");
+    expect(script).toContain("第三方镜像会成为下载/克隆内容的信任来源");
     expect(script).toContain("if [[ \"${DOT_GITHUB_MIRROR_TESTED:-0}\" == \"1\" ]]");
     expect(script).toContain("$'\\eOD'");
     expect(script).toContain("jimeh/tmuxifier");
@@ -455,7 +458,7 @@ describe("CLI build dot config", () => {
     expect(script).toContain('git -C "$repo_dir" remote set-url origin "$candidate"');
     expect(script).toContain('dot_git_pull_with_fallback "$TPM_DIR" "$TPM_REPO"');
     expect(script).toContain('dot_download_with_fallback "$NERD_FONT_URL" "$FONT_ZIP"');
-    expect(script).toContain("后续 TPM、源码和字体下载将优先使用该源");
+    expect(script).toContain("镜像是第三方信任来源，直连优先保留为可选项");
     expect(script).not.toContain("JetBrainsMono Nerd Font 下载源");
     expect(script).toContain("https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip");
     expect(script).toContain("tmux-font-jetbrainsmono");

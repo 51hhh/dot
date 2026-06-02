@@ -360,6 +360,9 @@ describe("assembleStandalone", () => {
     expect(result).toContain("dot_download_with_fallback()");
     expect(result).toContain("dot_git_clone_with_fallback()");
     expect(result).toContain("DOT_GITHUB_MIRRORS");
+    expect(result).toContain("dot_warn_github_mirror_trust()");
+    expect(result).toContain("DOT_GITHUB_MIRROR_TRUST_WARNED=0");
+    expect(result).toContain("第三方镜像会成为下载/克隆内容的信任来源");
     expect(result).toContain("DOT_CHILDREN['__root']='a'");
     expect(result).toContain("echo standalone");
     expect(result).toContain('dot_main "$@"');

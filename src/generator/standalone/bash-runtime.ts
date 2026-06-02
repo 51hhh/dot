@@ -35,6 +35,15 @@ readonly -a DOT_GITHUB_MIRRORS=(
 DOT_GITHUB_SELECTED_PREFIX=""
 DOT_GITHUB_ORDERED_PREFIXES=()
 DOT_GITHUB_MIRROR_TESTED=0
+DOT_GITHUB_MIRROR_TRUST_WARNED=0
+
+dot_warn_github_mirror_trust() {
+  if [[ "@{DOT_GITHUB_MIRROR_TRUST_WARNED:-0}" == "1" ]]; then
+    return 0
+  fi
+  log_warn "GitHub 第三方镜像会成为下载/克隆内容的信任来源；当前脚本未校验镜像内容签名或校验和。"
+  DOT_GITHUB_MIRROR_TRUST_WARNED=1
+}
 
 dot_sudo() {
   if [[ "@{EUID:-$(id -u)}" -eq 0 ]]; then
@@ -128,6 +137,7 @@ dot_download_with_fallback() {
     if [[ -z "$prefix" ]]; then
       log_info "下载（直连）: $url"
     else
+      dot_warn_github_mirror_trust
       log_info "下载（镜像）: $candidate"
     fi
 
@@ -169,6 +179,7 @@ dot_git_clone_with_fallback() {
     if [[ -z "$prefix" ]]; then
       log_info "克隆（直连）: $repo"
     else
+      dot_warn_github_mirror_trust
       log_info "克隆（镜像）: $candidate"
     fi
 
@@ -197,6 +208,7 @@ dot_git_pull_with_fallback() {
     if [[ -z "$prefix" ]]; then
       log_info "更新 TPM（直连）: $candidate"
     else
+      dot_warn_github_mirror_trust
       log_info "更新 TPM（镜像）: $candidate"
     fi
 

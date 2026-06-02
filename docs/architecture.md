@@ -73,6 +73,16 @@ The generated script must include:
 The built script must not require Node.js, npm, project config files, or template
 files at runtime.
 
+### GitHub Mirrors
+
+Generated Tmux installers include optional GitHub mirror prefixes for users in
+restricted networks. These mirrors are third-party trust roots for downloads and
+git content. The runtime warns when mirrored paths are used, but current release
+artifacts do not pin checksums or verify upstream signatures. Future release
+hardening should add explicit integrity metadata for archives, fonts, TPM, and
+plugins before mirror output is considered equivalent to direct GitHub origin
+content.
+
 ## Module Ownership
 
 ```text
