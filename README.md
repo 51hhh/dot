@@ -242,6 +242,20 @@ able to run it with:
 bash dist/dot.sh
 ```
 
+## GitHub Mirror Integrity
+
+The Tmux installer can use third-party GitHub mirror prefixes to improve
+connectivity for source archives, fonts, TPM, and plugins. Mirrors are treated
+as network trust roots: they can observe requested URLs and can serve the bytes
+downloaded by the installer. The generated script now warns when mirror paths
+are selected or used.
+
+Current policy: direct GitHub access remains available, mirror support is
+retained, and generated installs rely on HTTPS to the chosen endpoint. The
+project does not yet pin checksums or verify signatures for mirrored content.
+Checksum/signature metadata should be added before treating mirrors as
+integrity-equivalent to direct origin downloads.
+
 ## License
 
 MIT
