@@ -29,7 +29,6 @@
     "06-01-runtime-security-audit",
     "06-01-overlay-v2-migration-design",
     "06-01-ci-release-workflow",
-    "06-01-prompt-substitution-safety",
     "06-01-bash-runtime-second-split",
     "06-01-template-trust-boundary",
     "06-01-generated-header-metadata-safety",
