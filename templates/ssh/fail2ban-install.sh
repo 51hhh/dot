@@ -19,8 +19,9 @@ else
 fi
 
 # 写入 jail.local（不修改 jail.conf）
+# 只更新 [sshd] 段，保留用户已有的其他 jail 配置
 JAIL_LOCAL="/etc/fail2ban/jail.local"
-JAIL_CONTENT='[sshd]
+SSHD_JAIL='[sshd]
 enabled = true
 port = ssh
 filter = sshd
@@ -29,13 +30,20 @@ maxretry = 5
 bantime = 3600
 findtime = 600'
 
-# 幂等：仅在配置缺失或不完整时写入
 if [[ -f "$JAIL_LOCAL" ]] && grep -q '\[sshd\]' "$JAIL_LOCAL" && grep -q 'enabled = true' "$JAIL_LOCAL"; then
   log_info "fail2ban SSH jail 已配置，跳过写入。"
 else
-  if ! echo "$JAIL_CONTENT" | dot_sudo tee "$JAIL_LOCAL" > /dev/null; then
-    log_error "无法写入 ${JAIL_LOCAL}。"
-    return 1
+  if [[ -f "$JAIL_LOCAL" ]]; then
+    # 已有 jail.local：备份后用 awk 替换或追加 [sshd] 段
+    dot_sudo cp "$JAIL_LOCAL" "${JAIL_LOCAL}.bak.$(date +%Y%m%d%H%M%S)"
+    # 删除旧的 [sshd] 段（从 [sshd] 到下一个 [ 开头或文件末尾）
+    dot_sudo awk '/^\[sshd\]/{found=1; next} /^\[/{found=0} !found' "$JAIL_LOCAL" > "${JAIL_LOCAL}.tmp"
+    dot_sudo mv "${JAIL_LOCAL}.tmp" "$JAIL_LOCAL"
+    # 追加新的 [sshd] 段
+    printf '\n%s\n' "$SSHD_JAIL" | dot_sudo tee -a "$JAIL_LOCAL" >/dev/null
+  else
+    # 不存在：直接创建
+    printf '%s\n' "$SSHD_JAIL" | dot_sudo tee "$JAIL_LOCAL" >/dev/null
   fi
   log_ok "已写入 ${JAIL_LOCAL}。"
 fi

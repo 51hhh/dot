@@ -15,24 +15,43 @@ else
   touch "$SSH_CONFIG"
 fi
 
-# set_or_insert：删除已有匹配行，再追加配置块
-ssh_config_set_or_insert() {
-  local pattern="$1" line="$2" file="$3" tmp
-  tmp="$(mktemp 2>/dev/null || mktemp -t dot-ssh-config)"
-  awk -v pattern="$pattern" '$0 !~ pattern { print }' "$file" > "$tmp" && mv "$tmp" "$file"
-  printf '%s\n' "$line" >> "$file"
-}
-
 # 确保全局 Host * 块存在
-if ! grep -q '^Host \*$' "$SSH_CONFIG"; then
+if ! grep -q '^Host \*' "$SSH_CONFIG"; then
   printf '%s\n' '' 'Host *' >> "$SSH_CONFIG"
 fi
 
-ssh_config_set_or_insert '^\s+ServerAliveInterval' '    ServerAliveInterval 60' "$SSH_CONFIG"
-ssh_config_set_or_insert '^\s+ServerAliveCountMax' '    ServerAliveCountMax 3' "$SSH_CONFIG"
-ssh_config_set_or_insert '^\s+AddKeysToAgent' '    AddKeysToAgent yes' "$SSH_CONFIG"
-ssh_config_set_or_insert '^\s+HashKnownHosts' '    HashKnownHosts yes' "$SSH_CONFIG"
-ssh_config_set_or_insert '^\s+IdentityFile' '    IdentityFile ~/.ssh/id_ed25519' "$SSH_CONFIG"
+# 单次 awk 完成：删除旧的全局设置行，然后在第一个 Host * 块内插入新设置
+# 只在第一个 Host * 后插入，不会影响后续的 Host 块
+RECOMMENDED_SETTINGS='    ServerAliveInterval 60
+    ServerAliveCountMax 3
+    AddKeysToAgent yes
+    HashKnownHosts yes
+    IdentityFile ~/.ssh/id_ed25519'
+
+tmp="$(mktemp 2>/dev/null || mktemp -t dot-ssh-config)"
+awk -v settings="$RECOMMENDED_SETTINGS" '
+  /^Host \*$/ && !seen_host_star {
+    print
+    seen_host_star = 1
+    need_insert = 1
+    next
+  }
+  /^[^ \t]/ && seen_host_star && !printed {
+    # 遇到下一个顶级指令时，先输出推荐设置
+    printf "%s\n", settings
+    printed = 1
+  }
+  /^\s+ServerAlive/ || /^\s+AddKeysToAgent/ || /^\s+HashKnownHosts/ || /^\s+IdentityFile/ {
+    # 跳过旧的推荐设置行
+    next
+  }
+  { print }
+  END {
+    if (need_insert && !printed) {
+      printf "%s\n", settings
+    }
+  }
+' "$SSH_CONFIG" > "$tmp" && mv "$tmp" "$SSH_CONFIG"
 
 chmod 600 "$SSH_CONFIG"
 
