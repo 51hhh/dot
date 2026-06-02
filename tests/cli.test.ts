@@ -538,6 +538,10 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_CHILDREN['zsh-default-shell']='zsh-chsh-default zsh-chsh-skip'");
     expect(script).toContain("DOT_POST['zsh-final-notes']='1'");
     expect(script).toContain("dot_sudo apt-get install -y \"${ZSH_APT_PACKAGES[@]}\"");
+    expect(script).toContain("跳过 apt 安装，检查 Zsh 配置所需命令");
+    expect(script).toContain("for command_name in zsh git curl; do");
+    expect(script).toContain("缺少必要命令: ${missing[*]}");
+    expect(script).toContain("请先安装这些命令，或返回选择 apt 安装。");
     expect(script).toContain("RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh \"$installer\" --unattended --keep-zshrc");
     expect(script).toContain("https://install.ohmyz.sh/");
     expect(script).toContain("https://github.com/romkatv/powerlevel10k.git");
@@ -549,6 +553,9 @@ describe("CLI build dot config", () => {
     expect(script).toContain("source \"$ZSH/oh-my-zsh.sh\"");
     expect(script).toContain("[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh");
     expect(script).toContain("chsh -s \"$ZSH_PATH\" \"$CURRENT_USER\"");
+    expect(script).toContain("已选择暂不修改默认 shell。");
+    expect(script).toContain("后续可手动执行: chsh -s");
+    expect(script).toContain("$(command -v zsh)");
     expect(script).toContain("exec zsh");
     expect(script).toContain("p10k configure");
   });
