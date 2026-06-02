@@ -1,5 +1,6 @@
 # Oh My Zsh 安装
 log_info "安装 Oh My Zsh（非交互模式）..."
+log_warn "将从 https://install.ohmyz.sh/ 下载并执行官方 Oh My Zsh installer。请确认信任该来源。"
 
 if ! command -v zsh >/dev/null 2>&1; then
   log_error "未找到 zsh；请先安装 zsh。"

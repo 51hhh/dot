@@ -153,6 +153,24 @@ describe("CLI plan", () => {
     expect(stdout).toContain("post");
   });
 
+  it("includes SSH flow in plan output", () => {
+    const { stdout, exitCode } = run([
+      "plan",
+      "--config", dotConfig,
+      "--format", "text",
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ssh");
+    expect(stdout).toContain("ssh-install");
+    expect(stdout).toContain("ssh-keygen");
+    expect(stdout).toContain("ssh-hardening");
+    expect(stdout).toContain("ssh-authkeys");
+    expect(stdout).toContain("ssh-fail2ban");
+    expect(stdout).toContain("ssh-firewall");
+    expect(stdout).toContain("ssh-final-notes");
+  });
+
   it("writes a JSON plan snapshot", () => {
     const output = path.resolve(import.meta.dirname, "../dist/dot.plan.json");
     const { exitCode } = run([
@@ -432,6 +450,72 @@ describe("CLI build", () => {
 });
 
 
+describe("CLI SSH flow", () => {
+  it("SSH plan renders correctly in tree output", () => {
+    const { stdout, exitCode } = run([
+      "plan",
+      "--config", dotConfig,
+      "--format", "text",
+    ]);
+
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("ssh");
+    expect(stdout).toContain("ssh-install");
+    expect(stdout).toContain("ssh-show-pubkey");
+    expect(stdout).toContain("ssh-diagnose");
+    expect(stdout).toContain("ssh-hostkey");
+    expect(stdout).toContain("ssh-keygen");
+    expect(stdout).toContain("ssh-hardening");
+    expect(stdout).toContain("ssh-authkeys");
+    expect(stdout).toContain("ssh-client");
+    expect(stdout).toContain("ssh-fail2ban");
+    expect(stdout).toContain("ssh-firewall");
+    expect(stdout).toContain("ssh-final-notes");
+  });
+
+  it("SSH build generates standalone script containing SSH template content", () => {
+    const output = path.resolve(import.meta.dirname, "../dist/test-ssh.sh");
+    const { exitCode } = run([
+      "build",
+      "--config", dotConfig,
+      "--output", output,
+      "--quiet",
+    ]);
+    expect(exitCode).toBe(0);
+
+    const script = fs.readFileSync(output, "utf-8");
+    expect(script).toContain("openssh-server");
+    expect(script).toContain("ssh-keygen");
+    expect(script).toContain("sshd_config");
+    expect(script).toContain("authorized_keys");
+    expect(script).toContain("fail2ban");
+    expect(script).toContain("DOT_MODES['ssh']='multi'");
+    expect(script).toContain("DOT_CHILDREN['ssh']");
+    expect(script).toContain("DOT_POST['ssh-final-notes']='1'");
+  });
+
+  it("SSH JSON plan snapshot includes all SSH nodes", () => {
+    const output = path.resolve(import.meta.dirname, "../dist/ssh-plan.json");
+    const { exitCode } = run([
+      "plan",
+      "--config", dotConfig,
+      "--format", "json",
+      "--write", output,
+    ]);
+
+    expect(exitCode).toBe(0);
+    const plan = JSON.parse(fs.readFileSync(output, "utf-8"));
+    expect(plan.nodes.ssh).toBeDefined();
+    expect(plan.nodes["ssh-install"]).toBeDefined();
+    expect(plan.nodes["ssh-keygen"]).toBeDefined();
+    expect(plan.nodes["ssh-hardening"]).toBeDefined();
+    expect(plan.nodes["ssh-authkeys"]).toBeDefined();
+    expect(plan.nodes["ssh-fail2ban"]).toBeDefined();
+    expect(plan.nodes["ssh-firewall"]).toBeDefined();
+    expect(plan.nodes["ssh-final-notes"]).toBeDefined();
+  });
+});
+
 describe("CLI build dot config", () => {
   it("root is the dot home screen", () => {
     const output = path.resolve(import.meta.dirname, "../dist/test-dot-root.sh");
@@ -444,7 +528,7 @@ describe("CLI build dot config", () => {
     expect(exitCode).toBe(0);
     const script = fs.readFileSync(output, "utf-8");
     expect(script).toContain("DOT_TITLE='dot 安装器'");
-    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh'");
+    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh zsh-recovery ssh'");
     expect(script).toContain("DOT_MODES['__root']='single'");
     expect(script).toContain("DOT_MODES['tmux']='flow'");
     expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-status tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
@@ -530,18 +614,26 @@ describe("CLI build dot config", () => {
     expect(script).toContain("tmux-final-notes");
     expect(script).not.toContain("DOT_CHILDREN['__root']='tmux-install");
     expect(script).toContain("DOT_MODES['zsh']='flow'");
-    expect(script).toContain("DOT_MODES['zsh-plugins']='flow'");
-    expect(script).toContain("DOT_CHILDREN['zsh']='zsh-install zsh-oh-my-zsh zsh-powerlevel10k zsh-plugins zsh-zshrc-recommended zsh-default-shell zsh-final-notes'");
+    expect(script).toContain("DOT_MODES['zsh-plugins']='multi'");
+    expect(script).toContain("DOT_CHILDREN['zsh']='zsh-diagnose zsh-install zsh-oh-my-zsh zsh-powerlevel10k zsh-plugins zsh-zshrc zsh-default-shell zsh-final-notes'");
     expect(script).toContain("DOT_CHILDREN['zsh-install']='zsh-install-apt zsh-install-skip'");
-    expect(script).toContain("DOT_CHILDREN['zsh-powerlevel10k']='zsh-powerlevel10k-github zsh-powerlevel10k-gitee'");
+    expect(script).toContain("DOT_CHILDREN['zsh-oh-my-zsh']='zsh-oh-my-zsh-install zsh-oh-my-zsh-skip'");
+    expect(script).toContain("DOT_CHILDREN['zsh-powerlevel10k']='zsh-powerlevel10k-github zsh-powerlevel10k-gitee zsh-powerlevel10k-skip'");
     expect(script).toContain("DOT_CHILDREN['zsh-plugins']='zsh-plugin-autosuggestions zsh-plugin-syntax-highlighting'");
+    expect(script).toContain("DOT_CHILDREN['zsh-zshrc']='zsh-zshrc-recommended zsh-zshrc-minimal zsh-zshrc-patch-only zsh-zshrc-skip'");
     expect(script).toContain("DOT_CHILDREN['zsh-default-shell']='zsh-chsh-default zsh-chsh-skip'");
+    expect(script).toContain("DOT_CHILDREN['zsh-recovery']='zsh-recovery-diagnose zsh-zshrc-restore-backup zsh-chsh-reset-bash zsh-uninstall-plugins zsh-uninstall-powerlevel10k zsh-uninstall-oh-my-zsh zsh-uninstall-apt-remove zsh-recovery-final-notes'");
     expect(script).toContain("DOT_POST['zsh-final-notes']='1'");
+    expect(script).toContain("DOT_POST['zsh-recovery-final-notes']='1'");
+    expect(script).toContain("检查当前 Zsh 环境");
+    expect(script).toContain("Oh My Zsh: $OH_MY_ZSH_DIR");
+    expect(script).toContain("当前插件列表: $ZSH_PLUGINS_LINE");
     expect(script).toContain("dot_sudo apt-get install -y \"${ZSH_APT_PACKAGES[@]}\"");
     expect(script).toContain("跳过 apt 安装，检查 Zsh 配置所需命令");
     expect(script).toContain("for command_name in zsh git curl; do");
     expect(script).toContain("缺少必要命令: ${missing[*]}");
     expect(script).toContain("请先安装这些命令，或返回选择 apt 安装。");
+    expect(script).toContain("将从 https://install.ohmyz.sh/ 下载并执行官方 Oh My Zsh installer");
     expect(script).toContain("RUNZSH=no CHSH=no KEEP_ZSHRC=yes sh \"$installer\" --unattended --keep-zshrc");
     expect(script).toContain("https://install.ohmyz.sh/");
     expect(script).toContain("https://github.com/romkatv/powerlevel10k.git");
@@ -549,14 +641,54 @@ describe("CLI build dot config", () => {
     expect(script).toContain("https://github.com/zsh-users/zsh-autosuggestions.git");
     expect(script).toContain("https://github.com/zsh-users/zsh-syntax-highlighting.git");
     expect(script).toContain("ZSH_THEME=\"powerlevel10k/powerlevel10k\"");
-    expect(script).toContain("plugins=(git z extract zsh-autosuggestions zsh-syntax-highlighting)");
+    expect(script).toContain("ZSH_PLUGIN_LIST=(git z extract)");
+    expect(script).toContain("dot_zsh_append_plugin \"zsh-syntax-highlighting\"");
     expect(script).toContain("source \"$ZSH/oh-my-zsh.sh\"");
     expect(script).toContain("[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh");
+    expect(script).toContain("恢复最近的 ~/.zshrc 备份");
     expect(script).toContain("chsh -s \"$ZSH_PATH\" \"$CURRENT_USER\"");
+    expect(script).toContain("chsh -s \"$BASH_PATH\" \"$CURRENT_USER\"");
     expect(script).toContain("已选择暂不修改默认 shell。");
     expect(script).toContain("后续可手动执行: chsh -s");
+    expect(script).toContain("托管 Zsh 插件卸载完成");
+    expect(script).toContain("Powerlevel10k 已移动到");
+    expect(script).toContain("Oh My Zsh 已移动到");
+    expect(script).toContain("DOT_CONFIRM_ZSH_APT_REMOVE=1");
+    expect(script).toContain("apt-get remove -y zsh");
     expect(script).toContain("$(command -v zsh)");
     expect(script).toContain("exec zsh");
     expect(script).toContain("p10k configure");
+
+    // SSH metadata and template content
+    expect(script).toContain("DOT_MODES['ssh']='multi'");
+    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh zsh-recovery ssh'");
+    expect(script).toContain("DOT_CHILDREN['ssh-install']='ssh-install-apt ssh-install-skip'");
+    expect(script).toContain("DOT_CHILDREN['ssh-hostkey']='ssh-hostkey-regen ssh-hostkey-keep'");
+    expect(script).toContain("DOT_CHILDREN['ssh-keygen']='ssh-keygen-ed25519 ssh-keygen-rsa ssh-keygen-skip'");
+    expect(script).toContain("DOT_CHILDREN['ssh-hardening']='ssh-disable-password ssh-disable-root ssh-custom-port ssh-limit-users ssh-crypto-hardening ssh-session-hardening'");
+    expect(script).toContain("DOT_CHILDREN['ssh-authkeys']='ssh-authkeys-file ssh-authkeys-github ssh-authkeys-skip'");
+    expect(script).toContain("DOT_CHILDREN['ssh-client']='ssh-client-config ssh-agent-config'");
+    expect(script).toContain("DOT_CHILDREN['ssh-fail2ban']='ssh-fail2ban-install ssh-fail2ban-skip'");
+    expect(script).toContain("DOT_CHILDREN['ssh-firewall']='ssh-ufw-enable ssh-ufw-skip'");
+    expect(script).toContain("DOT_POST['ssh-final-notes']='1'");
+    expect(script).toContain("DOT_MODES['ssh-install']='single'");
+    expect(script).toContain("DOT_MODES['ssh-hardening']='multi'");
+    expect(script).toContain("DOT_MODES['ssh-client']='multi'");
+    expect(script).toContain("DOT_PROMPT_TYPES['ssh-custom-port']='number'");
+    expect(script).toContain("DOT_PROMPT_VARS['ssh-custom-port']='ssh_port'");
+    expect(script).toContain("DOT_PROMPT_TYPES['ssh-limit-users']='text'");
+    expect(script).toContain("DOT_PROMPT_VARS['ssh-limit-users']='allowed_users'");
+    expect(script).toContain("DOT_PROMPT_TYPES['ssh-authkeys-file']='text'");
+    expect(script).toContain("DOT_PROMPT_VARS['ssh-authkeys-file']='pubkey_path'");
+    expect(script).toContain("DOT_PROMPT_TYPES['ssh-authkeys-github']='text'");
+    expect(script).toContain("DOT_PROMPT_VARS['ssh-authkeys-github']='github_user'");
+
+    // SSH template content present in generated script
+    expect(script).toContain("openssh-server");
+    expect(script).toContain("ssh-keygen -t ed25519");
+    expect(script).toContain("sshd_config");
+    expect(script).toContain("fail2ban");
+    expect(script).toContain("authorized_keys");
+    expect(script).toContain("SSH 后续操作提示已显示");
   });
 });

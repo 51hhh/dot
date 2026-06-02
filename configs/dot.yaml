@@ -271,9 +271,15 @@ menu:
 
   - id: "zsh"
     label: "Zsh 一键配置"
-    description: "安装 Zsh、Oh My Zsh、Powerlevel10k、常用插件和推荐 zshrc"
+    description: "检查、安装、配置、恢复或卸载 Zsh、Oh My Zsh、Powerlevel10k 和常用插件"
     mode: "flow"
     children:
+      # ── 环境检查 ──
+      - id: "zsh-diagnose"
+        label: "检查当前 Zsh 环境"
+        description: "检查 zsh、依赖命令、Oh My Zsh、主题、插件、zshrc 和默认 shell 状态"
+        script: "../templates/zsh/diagnose.sh"
+
       # ── 安装方式 ──
       - id: "zsh-install"
         label: "安装方式"
@@ -291,30 +297,43 @@ menu:
 
       # ── Oh My Zsh ──
       - id: "zsh-oh-my-zsh"
-        label: "安装 Oh My Zsh"
-        description: "使用官方 installer 的非交互模式，不自动切换 shell 或修改默认 shell"
-        script: "../templates/zsh/oh-my-zsh-install.sh"
+        label: "Oh My Zsh"
+        mode: "single"
+        description: "安装 Oh My Zsh，或保留现有配置并跳过"
+        children:
+          - id: "zsh-oh-my-zsh-install"
+            label: "安装 Oh My Zsh"
+            description: "使用官方 installer 的非交互模式，不自动切换 shell 或修改默认 shell"
+            script: "../templates/zsh/oh-my-zsh-install.sh"
+          - id: "zsh-oh-my-zsh-skip"
+            label: "跳过 Oh My Zsh"
+            description: "不安装 Oh My Zsh，只检查当前目录状态"
+            script: "../templates/zsh/oh-my-zsh-skip.sh"
 
       # ── Powerlevel10k ──
       - id: "zsh-powerlevel10k"
-        label: "Powerlevel10k 主题"
+        label: "主题"
         mode: "single"
-        description: "选择主题下载源；GitHub 不通时可选 Gitee"
+        description: "选择 Powerlevel10k 下载源，或跳过主题安装"
         children:
           - id: "zsh-powerlevel10k-github"
-            label: "GitHub 源"
+            label: "Powerlevel10k GitHub 源"
             description: "使用 romkatv/powerlevel10k 官方 GitHub 仓库"
             script: "../templates/zsh/powerlevel10k-github.sh"
           - id: "zsh-powerlevel10k-gitee"
-            label: "Gitee 源"
+            label: "Powerlevel10k Gitee 源"
             description: "使用 romkatv/powerlevel10k Gitee 镜像"
             script: "../templates/zsh/powerlevel10k-gitee.sh"
+          - id: "zsh-powerlevel10k-skip"
+            label: "跳过主题安装"
+            description: "保留当前 ZSH_THEME，不安装 Powerlevel10k"
+            script: "../templates/zsh/powerlevel10k-skip.sh"
 
       # ── 插件 ──
       - id: "zsh-plugins"
         label: "常用插件"
-        mode: "flow"
-        description: "自动安装补全建议和语法高亮；语法高亮会放在 plugins 列表最后"
+        mode: "multi"
+        description: "按需安装插件；zshrc 写入时会让语法高亮保持在 plugins 列表最后"
         children:
           - id: "zsh-plugin-autosuggestions"
             label: "zsh-autosuggestions"
@@ -325,11 +344,28 @@ menu:
             description: "命令输入时即时语法高亮，必须最后加载"
             script: "../templates/zsh/plugin-syntax-highlighting.sh"
 
-      # ── zshrc 推荐配置 ──
-      - id: "zsh-zshrc-recommended"
-        label: "写入推荐 zshrc"
-        description: "配置 Oh My Zsh、Powerlevel10k 主题和插件列表；不会在 bash 中 source zshrc"
-        script: "../templates/zsh/zshrc-recommended.sh"
+      # ── zshrc 配置 ──
+      - id: "zsh-zshrc"
+        label: "zshrc 配置"
+        mode: "single"
+        description: "选择完整推荐配置、最小配置、只更新主题/插件、恢复备份或跳过"
+        children:
+          - id: "zsh-zshrc-recommended"
+            label: "写入推荐 zshrc"
+            description: "配置 Oh My Zsh、Powerlevel10k 主题和所选插件；不会在 bash 中 source zshrc"
+            script: "../templates/zsh/zshrc-recommended.sh"
+          - id: "zsh-zshrc-minimal"
+            label: "写入最小 zshrc"
+            description: "只确保 Oh My Zsh 基础 source 和 git 插件，不启用 Powerlevel10k"
+            script: "../templates/zsh/zshrc-minimal.sh"
+          - id: "zsh-zshrc-patch-only"
+            label: "只更新主题和插件"
+            description: "保留现有 zshrc 结构，只更新 ZSH_THEME 和 plugins 行"
+            script: "../templates/zsh/zshrc-patch-only.sh"
+          - id: "zsh-zshrc-skip"
+            label: "跳过 zshrc 修改"
+            description: "不修改 ~/.zshrc，只显示后续手动配置提示"
+            script: "../templates/zsh/zshrc-skip.sh"
 
       # ── 默认 shell ──
       - id: "zsh-default-shell"
@@ -351,4 +387,235 @@ menu:
         label: "显示最终提示"
         description: "提示手动进入 zsh、source zshrc 和运行 p10k configure"
         script: "../templates/zsh/final-notes.sh"
+        post: true
+
+  - id: "zsh-recovery"
+    label: "Zsh 卸载与恢复"
+    description: "检查 Zsh 状态，恢复 zshrc/default shell，或把 Oh My Zsh、主题和插件移动到备份目录"
+    mode: "multi"
+    children:
+      - id: "zsh-recovery-diagnose"
+        label: "检查当前 Zsh 环境"
+        description: "检查 zsh、依赖命令、Oh My Zsh、主题、插件、zshrc 和默认 shell 状态"
+        script: "../templates/zsh/diagnose.sh"
+      - id: "zsh-zshrc-restore-backup"
+        label: "恢复最近的 zshrc 备份"
+        description: "从 ~/.zshrc.bak.* 或 ~/.dot-backups/zsh/ 中恢复最新备份"
+        script: "../templates/zsh/zshrc-restore-backup.sh"
+      - id: "zsh-chsh-reset-bash"
+        label: "恢复默认 shell 为 bash"
+        description: "将登录 shell 改回 bash，适合卸载或恢复场景"
+        script: "../templates/zsh/chsh-reset-bash.sh"
+      - id: "zsh-uninstall-plugins"
+        label: "卸载托管插件"
+        description: "把 zsh-autosuggestions、zsh-syntax-highlighting 移动到备份目录"
+        script: "../templates/zsh/uninstall-plugins.sh"
+      - id: "zsh-uninstall-powerlevel10k"
+        label: "卸载 Powerlevel10k"
+        description: "把 Powerlevel10k 主题目录移动到备份目录"
+        script: "../templates/zsh/uninstall-powerlevel10k.sh"
+      - id: "zsh-uninstall-oh-my-zsh"
+        label: "卸载 Oh My Zsh"
+        description: "把 ~/.oh-my-zsh 移动到备份目录，不直接删除用户数据"
+        script: "../templates/zsh/uninstall-oh-my-zsh.sh"
+      - id: "zsh-uninstall-apt-remove"
+        label: "移除 zsh 软件包（谨慎）"
+        description: "使用 apt remove zsh；运行前应先把默认 shell 改回 bash"
+        script: "../templates/zsh/uninstall-apt-remove.sh"
+      - id: "zsh-recovery-final-notes"
+        label: "显示最终提示"
+        description: "提示重新打开终端确认默认 shell、zshrc 和 Oh My Zsh 状态"
+        script: "../templates/zsh/final-notes.sh"
+        post: true
+
+  - id: "ssh"
+    label: "SSH 一键配置"
+    description: "安装 SSH 服务、生成密钥、服务器加固、授权密钥管理、fail2ban 防护"
+    mode: "multi"
+    children:
+      # ── 安装 SSH 服务 ──
+      - id: "ssh-install"
+        label: "安装 SSH 服务"
+        mode: "single"
+        description: "安装并启动 OpenSSH 服务，或确认系统已有 SSH"
+        children:
+          - id: "ssh-install-apt"
+            label: "安装并启动 SSH 服务 (apt)"
+            description: "通过 apt 安装 openssh-server 并启用服务"
+            script: "../templates/ssh/install-apt.sh"
+          - id: "ssh-install-skip"
+            label: "跳过安装，系统已有 SSH"
+            description: "检查 sshd 和 SSH 服务是否可用"
+            script: "../templates/ssh/install-skip.sh"
+
+      # ── 查看本机公钥 ──
+      - id: "ssh-show-pubkey"
+        label: "查看本机公钥"
+        description: "扫描并显示 ~/.ssh 下所有公钥，方便复制粘贴"
+        script: "../templates/ssh/show-pubkey.sh"
+
+      # ── 诊断 SSH 配置 ──
+      - id: "ssh-diagnose"
+        label: "诊断 SSH 配置"
+        description: "检查 sshd 配置语法、权限、端口和服务状态"
+        script: "../templates/ssh/diagnose.sh"
+
+      # ── Host Key 管理 ──
+      - id: "ssh-hostkey"
+        label: "Host Key 管理"
+        mode: "single"
+        description: "重新生成或保留 SSH Host Key"
+        children:
+          - id: "ssh-hostkey-regen"
+            label: "重新生成所有 Host Key（推荐新机器）"
+            description: "备份旧密钥，生成 ed25519 + RSA-4096 新密钥"
+            script: "../templates/ssh/hostkey-regen.sh"
+          - id: "ssh-hostkey-keep"
+            label: "保留现有 Host Key"
+            description: "不做修改，保留当前 Host Key"
+            script: "../templates/ssh/hostkey-keep.sh"
+
+      # ── SSH 密钥生成 ──
+      - id: "ssh-keygen"
+        label: "生成 SSH 密钥"
+        mode: "single"
+        description: "生成客户端 SSH 密钥对"
+        children:
+          - id: "ssh-keygen-ed25519"
+            label: "Ed25519（推荐）"
+            description: "安全性好、性能高，现代系统首选"
+            script: "../templates/ssh/keygen-ed25519.sh"
+          - id: "ssh-keygen-rsa"
+            label: "RSA 4096（兼容性最好）"
+            description: "兼容旧系统和设备"
+            script: "../templates/ssh/keygen-rsa.sh"
+          - id: "ssh-keygen-skip"
+            label: "跳过，已有密钥"
+            description: "检查现有密钥状态"
+            script: "../templates/ssh/keygen-skip.sh"
+
+      # ── 服务器加固 ──
+      - id: "ssh-hardening"
+        label: "服务器加固"
+        mode: "multi"
+        description: "选择要应用的 sshd 加固项；每项独立执行，修改前均会备份并验证配置"
+        children:
+          - id: "ssh-disable-password"
+            label: "禁止密码登录"
+            description: "关闭密码和键盘交互认证，只允许密钥登录；运行前会检查是否存在可用密钥"
+            script: "../templates/ssh/disable-password.sh"
+          - id: "ssh-disable-root"
+            label: "禁止 root 密码登录"
+            description: "设置 PermitRootLogin prohibit-password（允许密钥登录 root，完全禁止请手动改为 no）"
+            script: "../templates/ssh/disable-root.sh"
+          - id: "ssh-custom-port"
+            label: "自定义 SSH 端口"
+            description: "修改 sshd 监听端口，减少自动化扫描；改端口后请同步更新防火墙和云安全组"
+            script: "../templates/ssh/custom-port.sh"
+            vars:
+              ssh_port: "2222"
+            prompt:
+              type: "number"
+              var: "ssh_port"
+              label: "输入自定义 SSH 端口"
+          - id: "ssh-limit-users"
+            label: "限制登录用户"
+            description: "设置 AllowUsers 白名单，仅允许指定用户 SSH 登录"
+            script: "../templates/ssh/limit-users.sh"
+            vars:
+              allowed_users: ""
+            prompt:
+              type: "text"
+              var: "allowed_users"
+              label: "输入允许登录的用户名（空格分隔）"
+          - id: "ssh-crypto-hardening"
+            label: "现代密码套件"
+            description: "采用 Mozilla Modern 推荐的 KexAlgorithms、Ciphers 和 MACs，并过滤弱 DH moduli"
+            script: "../templates/ssh/crypto-hardening.sh"
+          - id: "ssh-session-hardening"
+            label: "会话安全加固"
+            description: "限制最大认证尝试、登录超时、空闲断连、最大会话数并关闭 X11/TCP 转发"
+            script: "../templates/ssh/session-hardening.sh"
+
+      # ── 授权密钥管理 ──
+      - id: "ssh-authkeys"
+        label: "授权密钥管理"
+        mode: "single"
+        description: "将公钥导入 authorized_keys，支持本地文件或 GitHub 用户名"
+        children:
+          - id: "ssh-authkeys-file"
+            label: "从本地文件导入公钥"
+            description: "读取本地公钥文件并追加到 ~/.ssh/authorized_keys"
+            script: "../templates/ssh/authkeys-file.sh"
+            vars:
+              pubkey_path: ""
+            prompt:
+              type: "text"
+              var: "pubkey_path"
+              label: "输入公钥文件路径"
+          - id: "ssh-authkeys-github"
+            label: "从 GitHub 用户名拉取公钥"
+            description: "从 GitHub 用户的 .keys 下载所有公钥并导入"
+            script: "../templates/ssh/authkeys-github.sh"
+            vars:
+              github_user: ""
+            prompt:
+              type: "text"
+              var: "github_user"
+              label: "输入 GitHub 用户名"
+          - id: "ssh-authkeys-skip"
+            label: "跳过，稍后手动配置"
+            description: "不导入公钥，稍后可手动编辑 ~/.ssh/authorized_keys"
+            script: "../templates/ssh/authkeys-skip.sh"
+
+      # ── 客户端配置 ──
+      - id: "ssh-client"
+        label: "客户端配置"
+        mode: "multi"
+        description: "生成推荐 SSH 客户端配置和 SSH Agent 自动启动"
+        children:
+          - id: "ssh-client-config"
+            label: "生成推荐 ~/.ssh/config"
+            description: "写入 KeepAlive、HashKnownHosts、AddKeysToAgent 等全局配置"
+            script: "../templates/ssh/client-config.sh"
+          - id: "ssh-agent-config"
+            label: "配置 SSH Agent 自动启动"
+            description: "在 shell rc 文件中添加 ssh-agent 自动启动逻辑"
+            script: "../templates/ssh/agent-config.sh"
+
+      # ── fail2ban 防暴力破解 ──
+      - id: "ssh-fail2ban"
+        label: "fail2ban 防暴力破解"
+        mode: "single"
+        description: "安装并配置 fail2ban 保护 SSH，或跳过"
+        children:
+          - id: "ssh-fail2ban-install"
+            label: "安装并配置 fail2ban"
+            description: "安装 fail2ban，为 SSH 启用暴力破解防护（5 次失败封禁 1 小时）"
+            script: "../templates/ssh/fail2ban-install.sh"
+          - id: "ssh-fail2ban-skip"
+            label: "跳过 fail2ban"
+            description: "不安装 fail2ban"
+            script: "../templates/ssh/fail2ban-skip.sh"
+
+      # ── 防火墙配置 ──
+      - id: "ssh-firewall"
+        label: "防火墙配置"
+        mode: "single"
+        description: "启用 UFW 并放行 SSH 端口，或跳过"
+        children:
+          - id: "ssh-ufw-enable"
+            label: "启用 UFW 并放行 SSH"
+            description: "安装 UFW，为当前 SSH 端口添加 limit 规则并启用防火墙"
+            script: "../templates/ssh/ufw-ssh.sh"
+          - id: "ssh-ufw-skip"
+            label: "跳过防火墙配置"
+            description: "不配置 UFW 防火墙"
+            script: "../templates/ssh/ufw-skip.sh"
+
+      # ── 收尾提示 ──
+      - id: "ssh-final-notes"
+        label: "显示最终提示"
+        description: "显示配置摘要与后续操作提示"
+        script: "../templates/ssh/final-notes.sh"
         post: true

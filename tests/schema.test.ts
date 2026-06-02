@@ -59,7 +59,7 @@ describe("ConfigSchema", () => {
   });
 
   it("accepts all supported prompt types", () => {
-    for (const promptType of ["key", "key-compose", "text"] as const) {
+    for (const promptType of ["key", "key-compose", "text", "number"] as const) {
       const result = ConfigSchema.parse({
         name: "dot",
         menu: [

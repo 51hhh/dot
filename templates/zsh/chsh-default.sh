@@ -12,10 +12,23 @@ if ! command -v chsh >/dev/null 2>&1; then
 fi
 
 ZSH_PATH="$(command -v zsh)"
-CURRENT_USER="${USER:-$(id -un)}"
+if [[ -n "${SUDO_USER:-}" && "$SUDO_USER" != "root" ]]; then
+  CURRENT_USER="$SUDO_USER"
+else
+  CURRENT_USER="${USER:-$(id -un)}"
+fi
 
-if [[ "${SHELL:-}" == "$ZSH_PATH" ]]; then
-  log_ok "当前默认 shell 已是 $ZSH_PATH"
+if [[ "$CURRENT_USER" == "root" ]]; then
+  log_warn "当前目标用户是 root；如果你想修改普通用户默认 shell，请不要直接用 sudo 运行整个脚本。"
+fi
+
+CURRENT_LOGIN_SHELL="${SHELL:-}"
+if command -v getent >/dev/null 2>&1; then
+  CURRENT_LOGIN_SHELL="$(getent passwd "$CURRENT_USER" 2>/dev/null | awk -F: '{print $7}')"
+fi
+
+if [[ "$CURRENT_LOGIN_SHELL" == "$ZSH_PATH" ]]; then
+  log_ok "$CURRENT_USER 的默认 shell 已是 $ZSH_PATH"
   return 0
 fi
 
@@ -32,4 +45,4 @@ if ! chsh -s "$ZSH_PATH" "$CURRENT_USER"; then
   return 1
 fi
 
-log_ok "默认 shell 已修改为 $ZSH_PATH；请重新登录或重新打开终端后生效。"
+log_ok "$CURRENT_USER 的默认 shell 已修改为 $ZSH_PATH；请重新登录或重新打开终端后生效。"

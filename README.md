@@ -3,6 +3,9 @@
 `dot` is a TypeScript CLI for turning YAML/JSON installation menus into an
 inspectable plan and a self-contained interactive Bash installer.
 
+The built-in `configs/dot.yaml` ships with one-click configuration flows for
+Tmux, Zsh, and SSH.
+
 The current flow is:
 
 ```text

@@ -59,6 +59,9 @@ const MULTI_LANE_Y_OFFSET = 190;
 const POST_LANE_Y_OFFSET = 520;
 const LOCAL_NODE_SPACING = 190;
 const NESTED_FLOW_OFFSET = 1700;
+const NODE_WIDTH = 260;
+const NODE_HEIGHT = 132;
+const NODE_GAP = 24;
 
 export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOptions = {}): StudioGraph {
   const expandedNodeIds = options.expandedNodeIds ?? new Set<string>();
@@ -192,12 +195,28 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
 
   function layoutLocalLane(parentId: string, edges: BranchEdge[], parentPosition: StudioLayoutPoint, yOffset: number, nested: boolean): void {
     if (edges.length === 0) return;
+    const x = parentPosition.x + LOCAL_LANE_X_OFFSET;
+    const direction = yOffset < 0 ? -1 : 1;
+
     edges.forEach((edge, index) => {
-      const childPosition = {
-        x: parentPosition.x + LOCAL_LANE_X_OFFSET,
-        y: parentPosition.y + yOffset + index * LOCAL_NODE_SPACING,
-      };
-      addVisibleNode(edge.to, childPosition);
+      let y = parentPosition.y + yOffset + index * LOCAL_NODE_SPACING;
+
+      // Avoid overlap with already-placed nodes at the same X column
+      let attempts = 0;
+      while (attempts < 100) {
+        let overlap = false;
+        for (const pos of positions.values()) {
+          if (Math.abs(pos.x - x) < NODE_WIDTH + NODE_GAP && Math.abs(pos.y - y) < NODE_HEIGHT + NODE_GAP) {
+            overlap = true;
+            break;
+          }
+        }
+        if (!overlap) break;
+        y += direction * LOCAL_NODE_SPACING;
+        attempts++;
+      }
+
+      addVisibleNode(edge.to, { x, y });
       addProjectedEdge(edge, nested);
       layoutVisibleNodeChildren(edge.to, nested);
     });

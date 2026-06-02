@@ -184,5 +184,54 @@ dot_record_key_prompt() {
       *) if dot_is_back_key "$key"; then return 2; fi ;;
     esac
   done
+}
+
+dot_text_input_prompt() {
+  local item="$1"
+  local var="@{DOT_PROMPT_VARS[$item]:-}"
+  local label="@{DOT_PROMPT_LABELS[$item]:-Input}"
+  local value
+
+  dot_render_header "@{DOT_LABELS[$item]}" "$label"
+  printf '%s\n' "────────────────────────────────────────"
+  printf "请输入内容（直接回车使用默认值，输入 b 返回）：\n"
+  printf "> "
+  read -r value
+  if [[ "$value" == "b" || "$value" == "B" ]]; then
+    return 2
+  fi
+  if [[ -n "$var" ]]; then
+    DOT_VARS[$var]="$value"
+  fi
+  return 0
+}
+
+dot_number_input_prompt() {
+  local item="$1"
+  local var="@{DOT_PROMPT_VARS[$item]:-}"
+  local label="@{DOT_PROMPT_LABELS[$item]:-Input number}"
+  local value
+
+  while true; do
+    dot_render_header "@{DOT_LABELS[$item]}" "$label"
+    printf '%s\n' "────────────────────────────────────────"
+    printf "请输入数字（直接回车使用默认值，输入 b 返回）：\n"
+    printf "> "
+    read -r value
+    if [[ "$value" == "b" || "$value" == "B" ]]; then
+      return 2
+    fi
+    if [[ -z "$value" ]]; then
+      return 0
+    fi
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+      if [[ -n "$var" ]]; then
+        DOT_VARS[$var]="$value"
+      fi
+      return 0
+    fi
+    printf "%b无效输入，请输入纯数字。%b\n" "$RED" "$NC"
+    sleep 1
+  done
 }`;
 }
