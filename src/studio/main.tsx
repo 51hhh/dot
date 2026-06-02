@@ -129,11 +129,11 @@ function App() {
   }, [expandedNodeIds, plan, selectNode, showDependencies, toggleNodeExpansion]);
 
   const onNodesChange = useCallback((changes: NodeChange<PlanFlowNode>[]) => {
-    setNodes((current) => applyNodeChanges(changes, current));
+    setNodes((current) => applyNodeChanges(changes.filter((change) => change.type !== "remove"), current));
   }, []);
 
   const onEdgesChange = useCallback((changes: EdgeChange[]) => {
-    setEdges((current) => applyEdgeChanges(changes, current));
+    setEdges((current) => applyEdgeChanges(changes.filter((change) => change.type !== "remove"), current));
   }, []);
 
   const onNodeDragStop: OnNodeDrag<PlanFlowNode> = useCallback((_event, node) => {
@@ -255,6 +255,7 @@ function App() {
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_event, node) => selectNode(node.id)}
           nodesConnectable={false}
+          deleteKeyCode={null}
           fitView
           colorMode="dark"
         >
