@@ -259,9 +259,24 @@ function studioStylesheetLinks(): string {
 
 function serveStudioAsset(requestPath: string, res: http.ServerResponse): void {
   const relative = requestPath.replace(/^\/studio\//, "");
-  const assetPath = path.resolve("dist/studio", relative);
   const studioRoot = path.resolve("dist/studio");
-  if (!assetPath.startsWith(studioRoot) || !fs.existsSync(assetPath)) {
+  const assetPath = path.resolve(studioRoot, relative);
+  if (!isPathInside(studioRoot, assetPath)) {
+    res.statusCode = 404;
+    res.end("not found");
+    return;
+  }
+
+  let assetStats: fs.Stats;
+  try {
+    assetStats = fs.statSync(assetPath);
+  } catch {
+    res.statusCode = 404;
+    res.end("not found");
+    return;
+  }
+
+  if (!assetStats.isFile()) {
     res.statusCode = 404;
     res.end("not found");
     return;
@@ -269,6 +284,11 @@ function serveStudioAsset(requestPath: string, res: http.ServerResponse): void {
 
   res.setHeader("content-type", contentTypeFor(assetPath));
   fs.createReadStream(assetPath).pipe(res);
+}
+
+export function isPathInside(rootPath: string, candidatePath: string): boolean {
+  const relative = path.relative(rootPath, candidatePath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function contentTypeFor(filePath: string): string {

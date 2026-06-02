@@ -4,6 +4,7 @@ import path from "node:path";
 import { loadConfig } from "../src/loader/loader.js";
 import { buildInstallationPlan } from "../src/planner/index.js";
 import { buildStudioGraph } from "../src/studio/projection.js";
+import { isPathInside } from "../src/studio/server.js";
 
 const dotConfig = path.resolve(import.meta.dirname, "../configs/dot.yaml");
 const approxNodeWidth = 260;
@@ -23,6 +24,18 @@ function expectNoProjectedNodeOverlap(graph: ReturnType<typeof buildStudioGraph>
 }
 
 describe("studio canvas", () => {
+  it("checks Studio asset paths with path-relative directory boundaries", () => {
+    const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/server.ts"), "utf-8");
+    const root = path.resolve("/tmp/dot/dist/studio");
+
+    expect(isPathInside(root, path.join(root, "app.js"))).toBe(true);
+    expect(isPathInside(root, path.join(root, "assets/style.css"))).toBe(true);
+    expect(isPathInside(root, path.resolve("/tmp/dot/dist/studio-evil/app.js"))).toBe(false);
+    expect(isPathInside(root, path.resolve("/tmp/dot/dist/secret.js"))).toBe(false);
+    expect(source).toContain("path.relative(rootPath, candidatePath)");
+    expect(source).not.toContain("assetPath.startsWith(studioRoot)");
+  });
+
   it("keeps the React Flow shell left-to-right with visible graph affordances", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/main.tsx"), "utf-8");
     const css = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/studio.css"), "utf-8");
@@ -40,6 +53,10 @@ describe("studio canvas", () => {
     expect(source).toContain('aria-label="Plan diagnostics"');
     expect(source).toContain("Save failed:");
     expect(source).toContain("base: plan?.overlay");
+    expect(source).toContain("nodesConnectable={false}");
+    expect(source).not.toContain("addEdge");
+    expect(source).not.toContain("type OnConnect");
+    expect(source).not.toContain("onConnect={onConnect}");
     expect(source).not.toContain("optionGroups");
     expect(source).not.toContain("postItems");
     expect(source).not.toContain("join-affordance");

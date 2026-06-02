@@ -7,7 +7,6 @@ import {
   MiniMap,
   Position,
   ReactFlow,
-  addEdge,
   applyEdgeChanges,
   applyNodeChanges,
   type Edge,
@@ -15,7 +14,6 @@ import {
   type NodeChange,
   type EdgeChange,
   type NodeProps,
-  type OnConnect,
   type OnNodeDrag,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -138,16 +136,6 @@ function App() {
     setEdges((current) => applyEdgeChanges(changes, current));
   }, []);
 
-  const onConnect: OnConnect = useCallback((connection) => {
-    setEdges((current) => addEdge({
-      ...connection,
-      label: "dependency",
-      className: "edge-dependency",
-      animated: false,
-      style: edgeStyle("dependency"),
-    }, current));
-  }, []);
-
   const onNodeDragStop: OnNodeDrag<PlanFlowNode> = useCallback((_event, node) => {
     setNodes((current) => current.map((item) => item.id === node.id ? { ...item, position: node.position } : item));
   }, []);
@@ -264,9 +252,9 @@ function App() {
           onInit={setReactFlowInstance}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
           onNodeDragStop={onNodeDragStop}
           onNodeClick={(_event, node) => selectNode(node.id)}
+          nodesConnectable={false}
           fitView
           colorMode="dark"
         >

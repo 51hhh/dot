@@ -459,11 +459,40 @@ function applyDependencyAndOrderingPatches(config: Config, overlay: NormalizedPl
         const byChildId = new Map(children.map((child) => [child.id, child]));
         children = ordering.children.map((id) => byChildId.get(id)!);
       }
+      if (children && ordering?.flow) {
+        children = reorderMatchingSubset(children, ordering.flow, isFlowOrderingChild);
+      }
+      if (children && ordering?.post) {
+        children = reorderMatchingSubset(children, ordering.post, isPostOrderingChild);
+      }
       return { ...item, children: children ? reorder(children) : undefined };
     });
   }
 
   return { ...config, menu: reorder(config.menu) };
+}
+
+function reorderMatchingSubset(
+  children: MenuItem[],
+  orderedIds: string[],
+  predicate: (child: MenuItem) => boolean
+): MenuItem[] {
+  const matchingChildren = children.filter(predicate);
+  const matchingIds = new Set(matchingChildren.map((child) => child.id));
+  if (!isExactChildOrder(orderedIds, matchingIds)) return children;
+
+  const byChildId = new Map(matchingChildren.map((child) => [child.id, child]));
+  const reordered = orderedIds.map((id) => byChildId.get(id)!);
+  let nextIndex = 0;
+  return children.map((child) => predicate(child) ? reordered[nextIndex++] : child);
+}
+
+function isFlowOrderingChild(child: MenuItem): boolean {
+  return !child.hidden && !child.post;
+}
+
+function isPostOrderingChild(child: MenuItem): boolean {
+  return child.post === true;
 }
 
 function collectConfigNodes(config: Config): Map<string, MenuItem> {
