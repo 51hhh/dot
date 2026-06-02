@@ -22,8 +22,7 @@ body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b
 .status-error { color: #fca5a5; }
 .edge-draft-control { display: inline-flex; align-items: center; gap: 6px; color: #cbd5e1; font-size: 12px; }
 .edge-draft-control select { min-width: 86px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #f8fafc; padding: 7px 8px; }
-.draft-panel { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid #263244; background: #0b1324; color: #cbd5e1; font-size: 12px; }
-.draft-panel strong { color: #f8fafc; white-space: nowrap; }
+.draft-count { display: inline-flex; align-items: center; justify-content: center; min-width: 58px; padding: 6px 8px; border: 1px solid #334155; border-radius: 8px; background: #0f172a; color: #cbd5e1; font-size: 12px; white-space: nowrap; }
 .draft-export { width: 100%; min-height: 220px; box-sizing: border-box; padding: 12px 16px; border: 0; border-bottom: 1px solid #263244; background: #020617; color: #dbeafe; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; resize: vertical; }
 .diagnostics-panel { display: grid; gap: 6px; padding: 8px 16px; border-bottom: 1px solid #263244; background: #101826; }
 .diagnostic { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; width: 100%; text-align: left; border: 1px solid #334155; border-radius: 8px; background: #111827; color: #dbeafe; }
@@ -41,6 +40,7 @@ body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0b
 .legend-dependency i { background: #fb7185; border-top: 2px dashed #fb7185; height: 0; }
 .legend-post i { background: #facc15; }
 button { font: inherit; border: 0; border-radius: 10px; padding: 8px 10px; cursor: pointer; }
+button:disabled { cursor: not-allowed; opacity: .45; }
 .toolbar button:not(.ghost) { background: #2563eb; color: white; box-shadow: 0 8px 18px rgba(37, 99, 235, .22); }
 .tree-item { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; width: 100%; margin: 3px 0; text-align: left; background: transparent; color: #cbd5e1; border-radius: 10px; }
 .tree-item:hover, .tree-item.active { background: #1f2937; color: #f8fafc; }

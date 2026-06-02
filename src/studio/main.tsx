@@ -153,7 +153,7 @@ function App() {
 
     if (removedEdges.length > 0) {
       setDraftEdgeChanges((current) => recordDraftEdgeRemovals(current, removedEdges));
-      setStatus(`${removedEdges.length} edge removal drafted`);
+      setStatus(`已记录 ${removedEdges.length} 条删除草案`);
     }
 
     setEdges((current) => applyEdgeChanges(changes, current));
@@ -161,12 +161,12 @@ function App() {
 
   const onConnect: OnConnect = useCallback((connection) => {
     if (!connection.source || !connection.target) {
-      setStatus("Draft edge skipped: source or target is missing.");
+      setStatus("草案连线已跳过：缺少起点或终点。");
       return;
     }
 
     if (connection.source === connection.target) {
-      setStatus("Draft edge skipped: self edges are not supported.");
+      setStatus("草案连线已跳过：不支持连接到自身。");
       return;
     }
 
@@ -183,12 +183,12 @@ function App() {
     });
 
     if (existing) {
-      setStatus("Draft edge skipped: that typed edge already exists.");
+      setStatus("草案连线已跳过：同类型连线已存在。");
       return;
     }
 
     setDraftEdgeChanges((current) => recordDraftEdgeAdd(current, nextChange));
-    setStatus(`Drafted ${draftEdgeType} edge: ${connection.source} -> ${connection.target}`);
+    setStatus(`已记录 ${editableEdgeLabels[draftEdgeType]}连线草案：${connection.source} -> ${connection.target}`);
   }, [draftEdgeType, edges]);
 
   const onNodeDragStop: OnNodeDrag<PlanFlowNode> = useCallback((_event, node) => {
@@ -236,19 +236,25 @@ function App() {
 
   const exportDraft = useCallback(() => {
     if (!plan) {
-      setStatus("No plan loaded.");
+      setStatus("计划尚未加载。");
+      return;
+    }
+
+    if (draftEdgeChanges.length === 0) {
+      setExportText("");
+      setStatus("没有草案变更可导出。");
       return;
     }
 
     const nextExport = buildAgentDraftExport(plan, draftEdgeChanges);
     setExportText(nextExport);
-    setStatus(draftEdgeChanges.length > 0 ? "Draft export generated" : "No draft edge changes to export");
+    setStatus("草案导出已生成");
   }, [draftEdgeChanges, plan]);
 
   const clearDraft = useCallback(() => {
     setDraftEdgeChanges([]);
     setExportText("");
-    setStatus("Draft changes cleared");
+    setStatus("草案已清空");
   }, []);
 
   if (!plan) return <div className="loading">Loading Plan Canvas...</div>;
@@ -301,7 +307,7 @@ function App() {
             {showDependencies ? "Hide dependencies" : "Show dependencies"}
           </button>
           <label className="edge-draft-control">
-            <span>Draft edge</span>
+            <span>连线类型</span>
             <select
               data-action="draft-edge-type"
               value={draftEdgeType}
@@ -312,14 +318,11 @@ function App() {
               ))}
             </select>
           </label>
-          <button data-action="export-draft" onClick={exportDraft}>Export draft</button>
-          <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftEdgeChanges.length === 0}>Clear draft</button>
+          <span className="draft-count" aria-label="Draft change count">草案 {draftEdgeChanges.length}</span>
+          <button data-action="export-draft" onClick={exportDraft} disabled={draftEdgeChanges.length === 0}>导出草案</button>
+          <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftEdgeChanges.length === 0}>清空草案</button>
           <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
           <span className={status.startsWith("Save failed") ? "status status-error" : "status"}>{status}</span>
-        </div>
-        <div className="draft-panel" aria-label="Draft edge changes">
-          <strong>{draftEdgeChanges.length} draft changes</strong>
-          <span>Add or delete canvas edges locally, then export a prompt for the agent. Semantic changes are not saved by Studio.</span>
         </div>
         {exportText ? (
           <textarea
