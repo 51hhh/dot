@@ -199,14 +199,8 @@ export function mergePlanOverlay(current: PlanOverlay | null, patch: PlanOverlay
     ...(currentV2.positions ?? {}),
     ...(patchV2.positions ?? {}),
   });
-  const nodes = omitEmptyRecord({
-    ...(currentV2.nodes ?? {}),
-    ...(patchV2.nodes ?? {}),
-  });
-  const ordering = omitEmptyRecord({
-    ...(currentV2.ordering ?? {}),
-    ...(patchV2.ordering ?? {}),
-  });
+  const nodes = mergeRecordPatches(currentV2.nodes, patchV2.nodes);
+  const ordering = mergeRecordPatches(currentV2.ordering, patchV2.ordering);
   const dependencies = {
     add: mergeDependencyPatches(currentV2.dependencies?.add, patchV2.dependencies?.add),
     remove: mergeDependencyPatches(currentV2.dependencies?.remove, patchV2.dependencies?.remove),
@@ -518,6 +512,20 @@ function mergeDependencyPatches(
     merged.push(dependency);
   }
   return merged;
+}
+
+function mergeRecordPatches<T extends Record<string, unknown>>(
+  current: Record<string, T> | undefined,
+  patch: Record<string, T> | undefined
+): Record<string, T> | undefined {
+  const merged: Record<string, T> = { ...(current ?? {}) };
+  for (const [id, value] of Object.entries(patch ?? {})) {
+    merged[id] = {
+      ...(merged[id] ?? {}),
+      ...value,
+    };
+  }
+  return omitEmptyRecord(merged);
 }
 
 function stripUndefined<T extends Record<string, unknown>>(record: T): T {

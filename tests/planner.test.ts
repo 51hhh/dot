@@ -174,6 +174,39 @@ describe("buildInstallationPlan", () => {
     expect(current.overrides["tmux-prefix"]).toEqual({ hidden: false });
   });
 
+  it("merges v2 node and ordering patches at field level", () => {
+    const merged = mergePlanOverlay(
+      {
+        version: 2,
+        nodes: {
+          feature: { label: "Feature", disabled: true },
+        },
+        ordering: {
+          group: { children: ["a", "b"] },
+        },
+      },
+      {
+        version: 2,
+        nodes: {
+          feature: { disabled: false },
+        },
+        ordering: {
+          group: { flow: ["b", "a"] },
+        },
+      }
+    );
+
+    expect(merged).toEqual({
+      version: 2,
+      nodes: {
+        feature: { label: "Feature", disabled: false },
+      },
+      ordering: {
+        group: { children: ["a", "b"], flow: ["b", "a"] },
+      },
+    });
+  });
+
   it("applies an overlay to positions and disabled nodes", () => {
     const config: Config = {
       name: "dot",
