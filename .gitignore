@@ -8,3 +8,8 @@ coverage/
 .worktrees/
 .vscode/
 .claude/worktrees/
+.agents/
+.codex/
+Tmux.sh
+docs/superpowers/
+.trellis/tasks/archive/2026-06/05-30-brainstorm-arch/
