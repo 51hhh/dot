@@ -54,6 +54,8 @@ describe("studio canvas", () => {
     expect(source).toContain("Save failed:");
     expect(source).toContain("base: plan?.overlay");
     expect(source).toContain("nodesConnectable={false}");
+    expect(source).toContain("deleteKeyCode={null}");
+    expect(source).toContain('change.type !== "remove"');
     expect(source).not.toContain("addEdge");
     expect(source).not.toContain("type OnConnect");
     expect(source).not.toContain("onConnect={onConnect}");
