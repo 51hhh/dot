@@ -56,6 +56,10 @@ describe("studio canvas", () => {
     expect(source).toContain('data-action="draft-edge-type"');
     expect(source).toContain('data-action="export-draft"');
     expect(source).toContain('data-action="clear-draft"');
+    expect(source).toContain(">连线类型<");
+    expect(source).toContain(">导出草案<");
+    expect(source).toContain(">清空草案<");
+    expect(source).toContain("草案 {draftEdgeChanges.length}");
     expect(source).toContain("type OnConnect");
     expect(source).toContain("onConnect={onConnect}");
     expect(source).toContain("nodesConnectable");
@@ -67,6 +71,8 @@ describe("studio canvas", () => {
     expect(source).toContain("changedOperations:");
     expect(source).toContain("overlayPatchDraft:");
     expect(source).toContain("sourceOnlyOperations:");
+    expect(source).not.toContain("0 draft changes");
+    expect(source).not.toContain("Add or delete canvas edges locally");
     expect(source).not.toContain("optionGroups");
     expect(source).not.toContain("postItems");
     expect(source).not.toContain("join-affordance");
@@ -76,7 +82,7 @@ describe("studio canvas", () => {
     expect(css).toContain(".nested-flow-summary");
     expect(css).toContain(".diagnostics-panel");
     expect(css).toContain(".status-error");
-    expect(css).toContain(".draft-panel");
+    expect(css).toContain(".draft-count");
     expect(css).toContain(".draft-export");
     expect(css).toContain(".edge-draft .react-flow__edge-path");
     expect(css).not.toContain(".option-chip-single");
