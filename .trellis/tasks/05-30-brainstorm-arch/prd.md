@@ -103,19 +103,19 @@ bash dot.sh
 
 ## Acceptance Criteria
 
-- [ ] `npm run build` 后可以生成 `dist/dot.sh`。
-- [ ] `dist/dot.sh` 是单文件 bash 脚本。
-- [ ] `bash -n dist/dot.sh` 通过。
-- [ ] 在 Ubuntu Docker 容器中可执行 `bash dist/dot.sh` 并进入交互菜单。
-- [ ] 菜单支持多级导航、空格多选、回车确认、返回、退出。
-- [ ] 选择 tmux 插件时，依赖项自动进入执行计划。
-- [ ] `post` 节点总是在普通节点之后执行。
-- [ ] 确认执行前展示完整执行计划。
-- [ ] 执行完成后输出成功/失败汇总。
-- [ ] 开发者侧存在 `InstallationPlan` 中间结构，可表达菜单树、依赖边、flow 顺序、post 节点、prompt 和最终执行计划。
-- [ ] 开发者侧 Canvas 可以加载 Plan，展示并编辑节点、顺序、依赖和 post 信息。
-- [ ] Canvas 修改后的流程可以保存并重新参与 `dot.sh` 构建。
-- [ ] Canvas/Plan 能明确区分显示顺序、依赖顺序和最终执行顺序。
+- [x] `npm run build` 后可以生成 `dist/dot.sh`。
+- [x] `dist/dot.sh` 是单文件 bash 脚本。
+- [x] `bash -n dist/dot.sh` 通过。
+- [x] 在 Ubuntu Docker 容器中可执行 `bash dist/dot.sh` 并进入交互菜单。
+- [x] 菜单支持多级导航、空格多选、回车确认、返回、退出。
+- [x] 选择 tmux 插件时，依赖项自动进入执行计划。
+- [x] `post` 节点总是在普通节点之后执行。
+- [x] 确认执行前展示完整执行计划。
+- [x] 执行完成后输出成功/失败汇总。
+- [x] 开发者侧存在 `InstallationPlan` 中间结构，可表达菜单树、依赖边、flow 顺序、post 节点、prompt 和最终执行计划。
+- [x] 开发者侧 Canvas 可以加载 Plan，展示并编辑节点、顺序、依赖和 post 信息。
+- [x] Canvas 修改后的流程可以保存并重新参与 `dot.sh` 构建。
+- [x] Canvas/Plan 能明确区分显示顺序、依赖顺序和最终执行顺序。
 
 ## Out of Scope
 
