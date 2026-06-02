@@ -577,11 +577,12 @@ describe("buildInstallationPlan", () => {
     const config = loadConfig(path.resolve(import.meta.dirname, "../configs/dot.yaml"));
     const plan = buildInstallationPlan(config);
     const mainFlow = [
+      "zsh-diagnose",
       "zsh-install",
       "zsh-oh-my-zsh",
       "zsh-powerlevel10k",
       "zsh-plugins",
-      "zsh-zshrc-recommended",
+      "zsh-zshrc",
       "zsh-default-shell",
     ];
 
@@ -591,13 +592,87 @@ describe("buildInstallationPlan", () => {
       expect(plan.edges).toContainEqual({ from: mainFlow[index], to: mainFlow[index + 1], type: "flow" });
     }
     expect(plan.edges).toContainEqual({ from: "zsh-default-shell", to: "zsh-final-notes", type: "post" });
+    expect(plan.edges).toContainEqual({ from: "__root", to: "zsh-recovery", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-install", to: "zsh-install-apt", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-install", to: "zsh-install-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-oh-my-zsh", to: "zsh-oh-my-zsh-install", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-oh-my-zsh", to: "zsh-oh-my-zsh-skip", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-powerlevel10k", to: "zsh-powerlevel10k-github", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-powerlevel10k", to: "zsh-powerlevel10k-gitee", type: "single" });
-    expect(plan.edges).toContainEqual({ from: "zsh-plugins", to: "zsh-plugin-autosuggestions", type: "flow" });
-    expect(plan.edges).toContainEqual({ from: "zsh-plugin-autosuggestions", to: "zsh-plugin-syntax-highlighting", type: "flow" });
-    expect(plan.execution.postSteps.map((step) => step.id)).toEqual(expect.arrayContaining(["zsh-final-notes"]));
+    expect(plan.edges).toContainEqual({ from: "zsh-powerlevel10k", to: "zsh-powerlevel10k-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-plugins", to: "zsh-plugin-autosuggestions", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-plugins", to: "zsh-plugin-syntax-highlighting", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-zshrc", to: "zsh-zshrc-recommended", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-zshrc", to: "zsh-zshrc-minimal", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-zshrc", to: "zsh-zshrc-patch-only", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-zshrc", to: "zsh-zshrc-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-default-shell", to: "zsh-chsh-default", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-default-shell", to: "zsh-chsh-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-recovery-diagnose", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-zshrc-restore-backup", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-chsh-reset-bash", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-uninstall-plugins", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-uninstall-powerlevel10k", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-uninstall-oh-my-zsh", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-uninstall-apt-remove", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "zsh-recovery", to: "zsh-recovery-final-notes", type: "post" });
+    expect(plan.execution.postSteps.map((step) => step.id)).toEqual(
+      expect.arrayContaining(["zsh-final-notes", "zsh-recovery-final-notes"])
+    );
+  });
+
+  it("keeps the real ssh structure as multi-mode with expected direct children", () => {
+    const config = loadConfig(path.resolve(import.meta.dirname, "../configs/dot.yaml"));
+    const plan = buildInstallationPlan(config);
+
+    expect(plan.nodes.ssh).toBeDefined();
+    expect(plan.nodes.ssh.mode).toBe("multi");
+    expect(plan.nodes.ssh.kind).toBe("group");
+
+    const sshChildren = structureEdgesFrom(plan, "ssh");
+    const childIds = sshChildren.map((edge) => edge.to);
+
+    expect(childIds).toContain("ssh-install");
+    expect(childIds).toContain("ssh-show-pubkey");
+    expect(childIds).toContain("ssh-diagnose");
+    expect(childIds).toContain("ssh-hostkey");
+    expect(childIds).toContain("ssh-keygen");
+    expect(childIds).toContain("ssh-hardening");
+    expect(childIds).toContain("ssh-authkeys");
+    expect(childIds).toContain("ssh-client");
+    expect(childIds).toContain("ssh-fail2ban");
+    expect(childIds).toContain("ssh-firewall");
+    expect(childIds).toContain("ssh-final-notes");
+    expect(childIds).toHaveLength(11);
+
+    for (const id of childIds) {
+      if (id === "ssh-final-notes") {
+        expect(plan.edges).toContainEqual({ from: "ssh", to: id, type: "post" });
+      } else {
+        expect(plan.edges).toContainEqual({ from: "ssh", to: id, type: "multi" });
+      }
+    }
+
+    expect(plan.edges).toContainEqual({ from: "ssh-install", to: "ssh-install-apt", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-install", to: "ssh-install-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-keygen", to: "ssh-keygen-ed25519", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-keygen", to: "ssh-keygen-rsa", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-keygen", to: "ssh-keygen-skip", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-disable-password", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-disable-root", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-custom-port", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-limit-users", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-crypto-hardening", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-hardening", to: "ssh-session-hardening", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-client", to: "ssh-client-config", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-client", to: "ssh-agent-config", type: "multi" });
+    expect(plan.edges).toContainEqual({ from: "ssh-authkeys", to: "ssh-authkeys-file", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-authkeys", to: "ssh-authkeys-github", type: "single" });
+    expect(plan.edges).toContainEqual({ from: "ssh-authkeys", to: "ssh-authkeys-skip", type: "single" });
+
+    expect(plan.execution.postSteps.map((step) => step.id)).toEqual(
+      expect.arrayContaining(["ssh-final-notes"])
+    );
   });
 
   it("keeps post nodes out of the visible flow spine", () => {

@@ -14,7 +14,7 @@ export function isSafeHeaderMetadata(value: string): boolean {
 }
 
 export const PromptSchema = z.object({
-  type: z.enum(["key", "key-compose", "text"]),
+  type: z.enum(["key", "key-compose", "text", "number"]),
   var: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/, "Prompt var must be a shell-safe identifier"),
   label: z.string().min(1),
 });
@@ -58,7 +58,7 @@ export interface MenuItem {
   script?: string;
   vars?: Record<string, string>;
   prompt?: {
-    type: "key" | "key-compose" | "text";
+    type: "key" | "key-compose" | "text" | "number";
     var: string;
     label: string;
   };

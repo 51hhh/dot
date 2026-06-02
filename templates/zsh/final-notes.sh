@@ -12,11 +12,14 @@ cat <<'ZSH_FINAL_NOTES'
  2) 如果你已经在 zsh 中，可手动执行：
       source ~/.zshrc
 
- 3) 首次配置 Powerlevel10k：
+ 3) 如果安装或启用了 Powerlevel10k，首次配置可执行：
       p10k configure
 
  4) Powerlevel10k 建议使用 Nerd Font。
     如果图标显示为方框，请在终端设置中选择 Nerd Font 字体。
+
+ 5) 如果本次执行了卸载/恢复项，请重新打开终端确认默认 shell、
+    ~/.zshrc 和 Oh My Zsh 目录状态。
 ============================================================
 ZSH_FINAL_NOTES
 

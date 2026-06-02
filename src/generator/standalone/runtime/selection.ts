@@ -229,6 +229,14 @@ dot_run_step() {
             dot_compose_tmux_key_prompt "$choice"
             result=$?
             ;;
+          text)
+            dot_text_input_prompt "$choice"
+            result=$?
+            ;;
+          number)
+            dot_number_input_prompt "$choice"
+            result=$?
+            ;;
         esac
         if [[ "$result" -eq 0 ]]; then
           dot_select_single_item "$step" "$choice"
