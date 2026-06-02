@@ -268,3 +268,87 @@ menu:
         hidden: true
         description: "初始化 tmux.conf（自动选中）"
         script: "../templates/tmux/header.sh"
+
+  - id: "zsh"
+    label: "Zsh 一键配置"
+    description: "安装 Zsh、Oh My Zsh、Powerlevel10k、常用插件和推荐 zshrc"
+    mode: "flow"
+    children:
+      # ── 安装方式 ──
+      - id: "zsh-install"
+        label: "安装方式"
+        mode: "single"
+        description: "安装 zsh 与后续配置所需的 git、curl 等基础依赖"
+        children:
+          - id: "zsh-install-apt"
+            label: "包管理器安装 (apt)"
+            description: "安装 zsh、git、curl、ca-certificates"
+            script: "../templates/zsh/install-apt.sh"
+          - id: "zsh-install-skip"
+            label: "跳过安装，系统已安装 zsh"
+            description: "检查 zsh、git、curl 是否可用，不执行 apt"
+            script: "../templates/zsh/install-skip.sh"
+
+      # ── Oh My Zsh ──
+      - id: "zsh-oh-my-zsh"
+        label: "安装 Oh My Zsh"
+        description: "使用官方 installer 的非交互模式，不自动切换 shell 或修改默认 shell"
+        script: "../templates/zsh/oh-my-zsh-install.sh"
+
+      # ── Powerlevel10k ──
+      - id: "zsh-powerlevel10k"
+        label: "Powerlevel10k 主题"
+        mode: "single"
+        description: "选择主题下载源；GitHub 不通时可选 Gitee"
+        children:
+          - id: "zsh-powerlevel10k-github"
+            label: "GitHub 源"
+            description: "使用 romkatv/powerlevel10k 官方 GitHub 仓库"
+            script: "../templates/zsh/powerlevel10k-github.sh"
+          - id: "zsh-powerlevel10k-gitee"
+            label: "Gitee 源"
+            description: "使用 romkatv/powerlevel10k Gitee 镜像"
+            script: "../templates/zsh/powerlevel10k-gitee.sh"
+
+      # ── 插件 ──
+      - id: "zsh-plugins"
+        label: "常用插件"
+        mode: "flow"
+        description: "自动安装补全建议和语法高亮；语法高亮会放在 plugins 列表最后"
+        children:
+          - id: "zsh-plugin-autosuggestions"
+            label: "zsh-autosuggestions"
+            description: "根据历史命令提供灰色补全建议"
+            script: "../templates/zsh/plugin-autosuggestions.sh"
+          - id: "zsh-plugin-syntax-highlighting"
+            label: "zsh-syntax-highlighting"
+            description: "命令输入时即时语法高亮，必须最后加载"
+            script: "../templates/zsh/plugin-syntax-highlighting.sh"
+
+      # ── zshrc 推荐配置 ──
+      - id: "zsh-zshrc-recommended"
+        label: "写入推荐 zshrc"
+        description: "配置 Oh My Zsh、Powerlevel10k 主题和插件列表；不会在 bash 中 source zshrc"
+        script: "../templates/zsh/zshrc-recommended.sh"
+
+      # ── 默认 shell ──
+      - id: "zsh-default-shell"
+        label: "默认终端"
+        mode: "single"
+        description: "是否将登录 shell 修改为 zsh；生效通常需要重新登录"
+        children:
+          - id: "zsh-chsh-default"
+            label: "修改默认 shell 为 zsh"
+            description: "执行 chsh -s $(which zsh)，可能需要输入密码"
+            script: "../templates/zsh/chsh-default.sh"
+          - id: "zsh-chsh-skip"
+            label: "暂不修改默认 shell"
+            description: "保留当前默认 shell，只显示后续手动进入 zsh 的提示"
+            script: "../templates/zsh/chsh-skip.sh"
+
+      # ── 收尾提示 ──
+      - id: "zsh-final-notes"
+        label: "显示最终提示"
+        description: "提示手动进入 zsh、source zshrc 和运行 p10k configure"
+        script: "../templates/zsh/final-notes.sh"
+        post: true

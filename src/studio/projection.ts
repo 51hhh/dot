@@ -51,7 +51,8 @@ type StructureEdge = IndexedEdge & { type: PlanStructureEdgeType };
 type BranchEdge = StructureEdge & { type: "single" | "multi" | "post" };
 
 const SPINE_SPACING = 360;
-const MODULE_SPACING = 1120;
+const MODULE_START_Y = 560;
+const MODULE_GAP = 760;
 const LOCAL_LANE_X_OFFSET = 300;
 const SINGLE_LANE_Y_OFFSET = -180;
 const MULTI_LANE_Y_OFFSET = 190;
@@ -240,9 +241,13 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   }
 
   const rootEdges = structureEdgesFrom(plan.root).filter((edge) => edge.type !== "post");
-  addVisibleNode(plan.root, { x: 0, y: MODULE_SPACING / 2 });
-  rootEdges.forEach((edge, index) => {
-    const y = index * MODULE_SPACING + MODULE_SPACING / 2;
+  addVisibleNode(plan.root, { x: 0, y: MODULE_START_Y });
+  const rootChildPositions: StudioLayoutPoint[] = [];
+  let nextModuleY = MODULE_START_Y;
+  rootEdges.forEach((edge) => {
+    const moduleStartIds = new Set(visibleNodeIds);
+    const y = nextModuleY;
+    rootChildPositions.push({ x: SPINE_SPACING, y });
     addVisibleNode(edge.to, { x: SPINE_SPACING, y });
     addProjectedEdge(edge);
     layoutVisibleNodeChildren(edge.to, false);
@@ -250,10 +255,17 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
       primarySpines[edge.to] = collectFlowSpineIds(edge.to);
       layoutFlowChildren(edge.to, SPINE_SPACING, y, false);
     }
+
+    const moduleYValues = [...visibleNodeIds]
+      .filter((id) => !moduleStartIds.has(id))
+      .map((id) => positions.get(id)?.y)
+      .filter((value): value is number => value !== undefined);
+    nextModuleY = Math.max(y, ...moduleYValues) + MODULE_GAP;
   });
 
   if (rootEdges.length > 0 && !plan.nodes[plan.root]?.position) {
-    positions.set(plan.root, { x: 0, y: ((rootEdges.length - 1) * MODULE_SPACING) / 2 + MODULE_SPACING / 2 });
+    const averageChildY = rootChildPositions.reduce((sum, position) => sum + position.y, 0) / rootChildPositions.length;
+    positions.set(plan.root, { x: 0, y: averageChildY });
   }
 
   if (options.showDependencies) {
