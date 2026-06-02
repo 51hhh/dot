@@ -53,3 +53,41 @@ Completed final quality gates, fixed Docker smoke to execute generated snippets 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Close remaining Trellis tasks
+
+**Date**: 2026-06-02
+**Task**: Close remaining Trellis tasks
+**Branch**: `master`
+
+### Summary
+
+Marked bootstrap and architecture brainstorm tasks completed, synchronized active task acceptance state, and verified no active task remains non-completed.
+
+### Main Changes
+
+- Marked `00-bootstrap-guidelines` completed after confirming backend/frontend spec indexes and guideline files are filled.
+- Marked active `05-30-brainstorm-arch` completed and synchronized its PRD acceptance checklist with the completed archive copy.
+- Created and completed `06-02-close-remaining-trellis-tasks` to document the cleanup.
+- Verified all active task statuses are now `completed`.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2bad037` | chore(trellis): close remaining active tasks |
+
+### Testing
+
+- [OK] `python3 ./.trellis/scripts/task.py list`
+- [OK] `rg '"status": "(?!completed")' .trellis/tasks -g task.json --pcre2` returned no matches
+- [OK] `git diff --check`
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
