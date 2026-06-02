@@ -23,6 +23,14 @@ import { type InstallationPlan, type PlanEdge, type PlanNode } from "../planner/
 import { buildStudioGraph, type StudioNodeData } from "./projection.js";
 import "./studio.css";
 
+type StudioPlan = InstallationPlan & {
+  overlay?: {
+    version: 1 | 2 | null;
+    configHash: string;
+    overlayHash?: string;
+  };
+};
+
 type FlowNodeData = StudioNodeData & {
   onSelect: (id: string) => void;
   onToggleExpand: (id: string) => void;
@@ -65,7 +73,7 @@ function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
 const nodeTypes = { planNode: PlanNodeView };
 
 function App() {
-  const [plan, setPlan] = useState<InstallationPlan | null>(null);
+  const [plan, setPlan] = useState<StudioPlan | null>(null);
   const [nodes, setNodes] = useState<PlanFlowNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");
@@ -91,7 +99,7 @@ function App() {
   useEffect(() => {
     fetch("/api/plan")
       .then((response) => response.json())
-      .then((nextPlan: InstallationPlan) => {
+      .then((nextPlan: StudioPlan) => {
         setPlan(nextPlan);
         setSelectedId(nextPlan.root);
       });
@@ -154,13 +162,34 @@ function App() {
 
   const saveLayout = useCallback(async () => {
     const positions = Object.fromEntries(nodes.map((node) => [node.id, node.position]));
+    setStatus("Saving...");
     const response = await fetch("/api/plan", {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ patch: { version: 1, positions } }),
+      body: JSON.stringify({
+        base: plan?.overlay ? {
+          configHash: plan.overlay.configHash,
+          overlayHash: plan.overlay.overlayHash,
+        } : undefined,
+        patch: { version: 1, positions },
+      }),
     });
-    setStatus(response.ok ? "Saved" : "Save failed");
-  }, [nodes]);
+    const payload = await response.json().catch(() => null) as {
+      plan?: StudioPlan;
+      error?: { code?: string; message?: string };
+    } | null;
+
+    if (!response.ok) {
+      const detail = payload?.error?.message ?? payload?.error?.code ?? response.statusText;
+      setStatus(`Save failed: ${detail}`);
+      return;
+    }
+
+    if (payload?.plan) {
+      setPlan(payload.plan);
+    }
+    setStatus("Saved");
+  }, [nodes, plan?.overlay]);
 
   if (!plan) return <div className="loading">Loading Plan Canvas...</div>;
 
@@ -212,8 +241,22 @@ function App() {
             {showDependencies ? "Hide dependencies" : "Show dependencies"}
           </button>
           <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
-          <span>{status}</span>
+          <span className={status.startsWith("Save failed") ? "status status-error" : "status"}>{status}</span>
         </div>
+        {plan.diagnostics.length > 0 ? (
+          <div className="diagnostics-panel" aria-label="Plan diagnostics">
+            {plan.diagnostics.map((diagnostic, index) => (
+              <button
+                key={`${diagnostic.code}-${diagnostic.nodeId ?? "plan"}-${index}`}
+                className={`diagnostic diagnostic-${diagnostic.level}`}
+                onClick={() => diagnostic.nodeId ? focusNode(diagnostic.nodeId) : undefined}
+              >
+                <strong>{diagnostic.level}: {diagnostic.code}</strong>
+                <span>{diagnostic.message}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
         <ReactFlow
           nodes={nodes}
           edges={edges}

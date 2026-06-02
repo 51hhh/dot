@@ -37,6 +37,9 @@ describe("studio canvas", () => {
     expect(source).toContain("targetPosition: Position.Left");
     expect(source).toContain("nested-flow-summary");
     expect(source).toContain('data-action="toggle-dependencies"');
+    expect(source).toContain('aria-label="Plan diagnostics"');
+    expect(source).toContain("Save failed:");
+    expect(source).toContain("base: plan?.overlay");
     expect(source).not.toContain("optionGroups");
     expect(source).not.toContain("postItems");
     expect(source).not.toContain("join-affordance");
@@ -44,6 +47,8 @@ describe("studio canvas", () => {
     expect(css).toContain(".plan-node-mode-multi");
     expect(css).toContain(".plan-node-mode-flow");
     expect(css).toContain(".nested-flow-summary");
+    expect(css).toContain(".diagnostics-panel");
+    expect(css).toContain(".status-error");
     expect(css).not.toContain(".option-chip-single");
     expect(css).not.toContain(".option-chip-multi");
     expect(css).not.toContain(".post-list");

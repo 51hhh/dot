@@ -158,15 +158,15 @@ describe("buildInstallationPlan", () => {
     const merged = mergePlanOverlay(current, patch);
 
     expect(merged).toEqual({
-      version: 1,
+      version: 2,
       positions: {
         tmux: { x: 30, y: 40 },
         "tmux-options": { x: 50, y: 60 },
       },
-      disabled: ["tmux-prefix", "tmux-status", "tmux-options"],
-      overrides: {
-        "tmux-prefix": { hidden: false },
-        "tmux-options": { label: "Options", hidden: false },
+      nodes: {
+        "tmux-prefix": { hidden: false, disabled: true },
+        "tmux-status": { disabled: true },
+        "tmux-options": { label: "Options", hidden: false, disabled: true },
       },
     });
     expect(current.positions.tmux).toEqual({ x: 10, y: 20 });
@@ -264,6 +264,116 @@ describe("buildInstallationPlan", () => {
       );
       expect(resolved.diagnostics).toEqual([]);
     } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("loads v2 overlays with distinct disabled, dependency, ordering, and stale diagnostics", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-overlay-v2-"));
+    try {
+      const configPath = path.join(dir, "config.yaml");
+      fs.writeFileSync(path.join(dir, "base.sh"), "echo base\n");
+      fs.writeFileSync(path.join(dir, "a.sh"), "echo a\n");
+      fs.writeFileSync(path.join(dir, "b.sh"), "echo b\n");
+      fs.writeFileSync(
+        configPath,
+        [
+          'name: "Overlay v2"',
+          'version: "1.0"',
+          "menu:",
+          '  - id: "group"',
+          '    label: "Group"',
+          '    children:',
+          '      - id: "base"',
+          '        label: "Base"',
+          '        script: "base.sh"',
+          '      - id: "a"',
+          '        label: "A"',
+          '        script: "a.sh"',
+          '      - id: "b"',
+          '        label: "B"',
+          '        script: "b.sh"',
+          "",
+        ].join("\n")
+      );
+      fs.writeFileSync(
+        path.join(dir, "config.plan.json"),
+        JSON.stringify({
+          version: 2,
+          base: { configHash: "old" },
+          positions: {
+            a: { x: 100, y: 200 },
+            stale: { x: 1, y: 2 },
+          },
+          nodes: {
+            a: { label: "A patched", hidden: false, disabled: true },
+            stale: { label: "Missing" },
+          },
+          dependencies: {
+            add: [{ from: "base", to: "b" }],
+          },
+          ordering: {
+            group: { children: ["b", "a", "base"] },
+          },
+        })
+      );
+
+      const resolved = resolveInstallationPlan(configPath);
+
+      expect(resolved.overlayVersion).toBe(2);
+      expect(resolved.plan.nodes.a).toEqual(expect.objectContaining({
+        label: "A patched",
+        hidden: true,
+        position: { x: 100, y: 200 },
+      }));
+      expect(resolved.config.menu[0].children?.map((child) => child.id)).toEqual(["b", "a", "base"]);
+      expect(resolved.plan.edges).toContainEqual({ from: "base", to: "b", type: "dependency" });
+      expect(resolved.diagnostics).toEqual(expect.arrayContaining([
+        expect.objectContaining({ code: "stale_node_id", nodeId: "stale" }),
+      ]));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("detects Studio overlay hash conflicts before saving", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dot-studio-conflict-"));
+    const configPath = path.join(dir, "dot.yaml");
+    const overlayPath = path.join(dir, "dot.plan.json");
+    fs.writeFileSync(
+      configPath,
+      [
+        "name: dot",
+        "version: '1.0'",
+        "menu:",
+        "  - id: tmux",
+        "    label: Tmux",
+        "",
+      ].join("\n")
+    );
+    fs.writeFileSync(overlayPath, JSON.stringify({ version: 2, positions: { tmux: { x: 10, y: 20 } } }));
+
+    const server = await startStudio({ configPath, port: 0 });
+    try {
+      const baseUrl = `http://127.0.0.1:${server.port}`;
+      const loadedPlan = await fetch(`${baseUrl}/api/plan`).then((response) => response.json());
+      fs.writeFileSync(overlayPath, JSON.stringify({ version: 2, positions: { tmux: { x: 30, y: 40 } } }));
+
+      const response = await fetch(`${baseUrl}/api/plan`, {
+        method: "PUT",
+        body: JSON.stringify({
+          base: loadedPlan.overlay,
+          patch: { version: 1, positions: { tmux: { x: 50, y: 60 } } },
+        }),
+      });
+
+      expect(response.status).toBe(409);
+      await expect(response.json()).resolves.toMatchObject({
+        error: { code: "overlay_conflict" },
+      });
+      expect(JSON.parse(fs.readFileSync(overlayPath, "utf-8")).positions.tmux).toEqual({ x: 30, y: 40 });
+    } finally {
+      await server.close();
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -443,10 +553,24 @@ describe("buildInstallationPlan", () => {
           },
         }),
       });
-      expect(validPatch.status).toBe(204);
+      expect(validPatch.status).toBe(200);
+      await expect(validPatch.json()).resolves.toMatchObject({
+        ok: true,
+        plan: {
+          nodes: {
+            "tmux-install-apt": {
+              position: { x: 320, y: 180 },
+              hidden: true,
+            },
+          },
+        },
+      });
 
       const plan = await fetch(`${baseUrl}/api/plan`);
       expect(await plan.json()).toMatchObject({
+        overlay: {
+          version: 2,
+        },
         nodes: {
           "tmux-install-apt": {
             position: { x: 320, y: 180 },
@@ -455,9 +579,11 @@ describe("buildInstallationPlan", () => {
         },
       });
       expect(JSON.parse(fs.readFileSync(path.join(dir, "dot.plan.json"), "utf-8"))).toEqual({
-        version: 1,
+        version: 2,
         positions: { "tmux-install-apt": { x: 320, y: 180 } },
-        disabled: ["tmux-install-apt"],
+        nodes: {
+          "tmux-install-apt": { disabled: true },
+        },
       });
     } finally {
       await server.close();

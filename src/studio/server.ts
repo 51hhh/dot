@@ -4,13 +4,17 @@ import path from "node:path";
 import { loadConfig } from "../loader/loader.js";
 import { resolveInstallationPlanFromConfig } from "../planner/index.js";
 import {
+  configHashForPath,
   loadPlanOverlay,
   mergePlanOverlay,
-  parsePlanOverlayPayload,
+  overlayHashForPath,
+  parsePlanOverlaySavePayload,
   PlanOverlayValidationError,
   planOverlayPathForConfig,
   savePlanOverlay,
+  toPlanOverlayV2,
 } from "../planner/overlay.js";
+import type { InstallationPlan } from "../planner/types.js";
 
 const MAX_PLAN_PATCH_BODY_BYTES = 256 * 1024;
 
@@ -18,12 +22,13 @@ export async function startStudio(opts: { configPath: string; port: number }) {
   const loadedConfig = loadConfig(opts.configPath);
   const planPath = planOverlayPathForConfig(opts.configPath);
   let currentOverlay = loadPlanOverlay(planPath);
-  let currentPlan = resolveInstallationPlanFromConfig({
+  let currentResolved = resolveInstallationPlanFromConfig({
     configPath: opts.configPath,
     overlayPath: planPath,
     loadedConfig,
     overlay: currentOverlay,
-  }).plan;
+  });
+  let currentPlan = withStudioPlanMetadata(currentResolved.plan, currentResolved);
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -66,9 +71,9 @@ export async function startStudio(opts: { configPath: string; port: number }) {
           return;
         }
 
-        let patch;
+        let saveRequest;
         try {
-          patch = parsePlanOverlayPayload(rawPayload);
+          saveRequest = parsePlanOverlaySavePayload(rawPayload);
         } catch (err: unknown) {
           if (err instanceof PlanOverlayValidationError) {
             const statusCode = err.code === "missing_patch" ? 400 : 422;
@@ -79,7 +84,24 @@ export async function startStudio(opts: { configPath: string; port: number }) {
           return;
         }
 
-        const nextOverlay = mergePlanOverlay(currentOverlay, patch);
+        const currentConfigHash = configHashForPath(opts.configPath);
+        const currentOverlayHash = overlayHashForPath(planPath);
+        if (saveRequest.base?.configHash && saveRequest.base.configHash !== currentConfigHash) {
+          writeJsonError(res, 409, "base_config_conflict", "Source config changed since this plan was loaded.", {
+            currentConfigHash,
+            currentOverlayHash,
+          });
+          return;
+        }
+        if (saveRequest.base?.overlayHash && saveRequest.base.overlayHash !== currentOverlayHash) {
+          writeJsonError(res, 409, "overlay_conflict", "Plan overlay changed since this plan was loaded.", {
+            currentConfigHash,
+            currentOverlayHash,
+          });
+          return;
+        }
+
+        const nextOverlay = mergePlanOverlay(currentOverlay, saveRequest.patch);
         let nextPlan;
         try {
           nextPlan = resolveInstallationPlanFromConfig({
@@ -87,7 +109,7 @@ export async function startStudio(opts: { configPath: string; port: number }) {
             overlayPath: planPath,
             loadedConfig,
             overlay: nextOverlay,
-          }).plan;
+          });
         } catch (err: unknown) {
           writeJsonError(res, 422, "invalid_overlay", "Plan overlay patch could not be applied.", { detail: errorMessage(err) });
           return;
@@ -101,9 +123,16 @@ export async function startStudio(opts: { configPath: string; port: number }) {
         }
 
         currentOverlay = nextOverlay;
-        currentPlan = nextPlan;
-        res.statusCode = 204;
-        res.end();
+        currentResolved = nextPlan;
+        currentPlan = withStudioPlanMetadata(currentResolved.plan, currentResolved);
+        writeJson(res, {
+          ok: true,
+          overlayVersion: toPlanOverlayV2(nextOverlay).version,
+          configHash: currentResolved.configHash,
+          overlayHash: currentResolved.overlayHash,
+          diagnostics: currentResolved.diagnostics,
+          plan: currentPlan,
+        });
       });
       req.on("error", () => {
         if (oversized) {
@@ -117,8 +146,7 @@ export async function startStudio(opts: { configPath: string; port: number }) {
     }
 
     if (url.pathname === "/api/plan") {
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      res.end(JSON.stringify(currentPlan));
+      writeJson(res, currentPlan);
       return;
     }
 
@@ -150,6 +178,39 @@ export async function startStudio(opts: { configPath: string; port: number }) {
       server.close((err) => (err ? reject(err) : resolve()));
     }),
   };
+}
+
+type StudioPlanMetadata = {
+  overlay?: {
+    version: 1 | 2 | null;
+    configHash: string;
+    overlayHash?: string;
+  };
+};
+
+function withStudioPlanMetadata(
+  plan: InstallationPlan,
+  resolved: {
+    overlayVersion: 1 | 2 | null;
+    configHash: string;
+    overlayHash?: string;
+  }
+): InstallationPlan & StudioPlanMetadata {
+  return {
+    ...plan,
+    overlay: {
+      version: resolved.overlayVersion,
+      configHash: resolved.configHash,
+      overlayHash: resolved.overlayHash,
+    },
+  };
+}
+
+function writeJson(res: http.ServerResponse, body: unknown, statusCode = 200): void {
+  if (res.headersSent) return;
+  res.statusCode = statusCode;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.end(JSON.stringify(body));
 }
 
 function writeJsonError(
