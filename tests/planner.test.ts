@@ -6,6 +6,7 @@ import { loadConfig } from "../src/loader/loader.js";
 import type { Config } from "../src/loader/schema.js";
 import {
   applyPlanOverlay,
+  applyPlanOverlayToConfig,
   loadPlanOverlay,
   mergePlanOverlay,
   parsePlanOverlayPayload,
@@ -367,6 +368,87 @@ describe("buildInstallationPlan", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("applies v2 flow and post ordering patches to direct child subsets", () => {
+    const config: Config = {
+      name: "Overlay ordering",
+      version: "1.0",
+      menuMode: "single",
+      menu: [
+        {
+          id: "group",
+          label: "Group",
+          mode: "flow",
+          children: [
+            { id: "hidden-header", label: "Hidden header", hidden: true, script: "templates/tmux/header.sh" },
+            { id: "install", label: "Install", script: "templates/tmux/install-apt.sh" },
+            { id: "notes", label: "Notes", post: true, script: "templates/tmux/final-notes.sh" },
+            { id: "plugins", label: "Plugins", script: "templates/tmux/plugin-resurrect.sh" },
+            { id: "cleanup", label: "Cleanup", post: true, script: "templates/tmux/cleanup.sh" },
+            { id: "finalize", label: "Finalize", script: "templates/tmux/finalize.sh" },
+          ],
+        },
+      ],
+    };
+
+    const patched = applyPlanOverlayToConfig(config, {
+      version: 2,
+      ordering: {
+        group: {
+          flow: ["finalize", "install", "plugins"],
+          post: ["cleanup", "notes"],
+        },
+      },
+    });
+
+    expect(patched.menu[0].children?.map((child) => child.id)).toEqual([
+      "hidden-header",
+      "finalize",
+      "cleanup",
+      "install",
+      "notes",
+      "plugins",
+    ]);
+
+    const plan = buildInstallationPlan(patched);
+    expect(plan.edges).toContainEqual({ from: "group", to: "finalize", type: "flow" });
+    expect(plan.edges).toContainEqual({ from: "finalize", to: "cleanup", type: "post" });
+    expect(plan.edges).toContainEqual({ from: "finalize", to: "install", type: "flow" });
+    expect(plan.edges).toContainEqual({ from: "install", to: "notes", type: "post" });
+    expect(plan.edges).toContainEqual({ from: "install", to: "plugins", type: "flow" });
+  });
+
+  it("ignores incomplete v2 flow and post ordering subsets", () => {
+    const config: Config = {
+      name: "Overlay ordering",
+      version: "1.0",
+      menu: [
+        {
+          id: "group",
+          label: "Group",
+          mode: "flow",
+          children: [
+            { id: "install", label: "Install" },
+            { id: "notes", label: "Notes", post: true },
+            { id: "plugins", label: "Plugins" },
+            { id: "cleanup", label: "Cleanup", post: true },
+          ],
+        },
+      ],
+    };
+
+    const patched = applyPlanOverlayToConfig(config, {
+      version: 2,
+      ordering: {
+        group: {
+          flow: ["plugins"],
+          post: ["cleanup"],
+        },
+      },
+    });
+
+    expect(patched.menu[0].children?.map((child) => child.id)).toEqual(["install", "notes", "plugins", "cleanup"]);
   });
 
   it("detects Studio overlay hash conflicts before saving", async () => {
