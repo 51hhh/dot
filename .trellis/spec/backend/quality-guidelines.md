@@ -91,6 +91,7 @@ For the self-contained MVP:
 dot build --config <path> [--output <path>] [--quiet]
 node dist/index.js build --config configs/tmux.yaml --output dist/dot.sh --quiet
 bash dist/dot.sh --dry-run-plan --select <ids...>
+bash dist/dot.sh --run-plan --select <ids...>
 ```
 
 Build-time TypeScript API:
@@ -130,6 +131,9 @@ assembleStandalone(opts: {
 - Generated function names must normalize ids and include a stable suffix to avoid collisions.
 - Generated `dot.sh --dry-run-plan --select <ids...>` must be noninteractive: select the requested ids, expand branch ids to runnable leaves, include dependencies through the same runtime planner used by interactive execution, print the resolved plan, and exit before running snippets.
 - Dry-run plan output must show normal steps before post steps, and must include ids so CI can assert dependency and post ordering without localized label coupling.
+- Generated `dot.sh --run-plan --select <ids...>` must be noninteractive: select the requested ids, expand branch ids to runnable leaves, include dependencies through the same runtime planner used by interactive execution, execute snippets inside the standalone runtime helper environment, print a summary, and exit non-zero if any planned step fails or is skipped.
+- `DOT_RUN_PRESET="<ids...>"` is an integration-test hook for generated standalone scripts. When no CLI args are provided, the runtime must treat it like `--run-plan --select <ids...>` so Docker smoke tests can execute selected snippets without driving the TUI.
+- Docker smoke generation must build a full standalone script and inject `DOT_RUN_PRESET`; it must not use the legacy `dot --dry-run --select` snippet output because snippets can rely on runtime helpers such as `dot_sudo`.
 
 ### 4. Validation & Error Matrix
 
@@ -146,17 +150,22 @@ assembleStandalone(opts: {
 | Generated bash syntax invalid | `validateScript` reports `bash -n` failure and build exits non-zero |
 | Generated `--dry-run-plan` receives an unknown id | Script exits non-zero and reports `Unknown menu item id` without running snippets |
 | Generated `--dry-run-plan` receives no selection | Script exits non-zero and prints usage without entering the interactive TUI |
+| Generated `--run-plan` receives an unknown id | Script exits non-zero and reports `Unknown menu item id` without running snippets |
+| Generated `--run-plan` receives a snippet failure | Script prints the summary and exits non-zero so Docker/CI fail |
+| Docker smoke generation uses legacy `dot --dry-run --select` snippet output | Invalid: generated snippets may call standalone runtime helpers that are absent from the legacy snippet-only script |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `node dist/index.js build --config configs/tmux.yaml --output dist/dot.sh --quiet` creates a valid self-contained script.
 - Good: `bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize` prints `tmux-header` and `tmux-tpm` before `tmux-plugin-resurrect`, then prints post steps after normal steps.
+- Good: `bash dist/dot.sh --run-plan --select feature` executes `feature` and its dependencies inside the generated runtime and returns non-zero if any step fails.
 - Good: `configs/dot.plan.json` can hide a node or override its label, and the generated `DOT_HIDDEN` / `DOT_LABELS` metadata reflects that change.
 - Base: generated script contains `dot_navigate()`, `DOT_CHILDREN['__root']`, and `dot_main "$@"`.
 - Bad: an id like `bad.id` is rejected instead of producing an invalid bash function or associative-array key.
 - Bad: sidecar JSON is cast to `PlanOverlay` without validation.
 - Bad: an overlay changes `post` behavior without rerunning dependency/post semantic validation.
 - Bad: an overlay can replace a node `script` path and silently change executed code.
+- Bad: Docker smoke writes a selected snippet-only script with `dot --dry-run --select`; this bypasses standalone runtime helpers and can fail with `dot_sudo: command not found`.
 
 ### 6. Tests Required
 
@@ -168,7 +177,9 @@ assembleStandalone(opts: {
 - CLI: sidecar overlay affects generated build metadata for safe fields.
 - CLI: overlay-created dependency/post conflicts fail before writing output.
 - CLI: generated script `--dry-run-plan --select ...` prints dependency-expanded normal steps before post steps and does not print snippet command output.
+- CLI: generated script `--run-plan --select ...` executes dependency-expanded snippets in order and returns non-zero on failed/skipped steps.
 - Integration: generated `dist/dot.sh` passes `bash -n`.
+- Integration: Docker smoke builds a full standalone script, injects `DOT_RUN_PRESET`, and validates real tmux installation/configuration in Ubuntu.
 
 ### 7. Wrong vs Correct
 
@@ -185,6 +196,11 @@ const overlay = JSON.parse(fs.readFileSync(path, "utf-8")) as PlanOverlay;
 const config = applyPlanOverlayToConfig(loadConfig(configPath), overlay);
 ```
 
+```ts
+// Docker smoke uses snippet-only dry-run output, so runtime helpers are missing.
+const script = execFileSync(process.execPath, [cliPath, "--select", ...ids, "--dry-run"]);
+```
+
 #### Correct
 
 ```ts
@@ -199,4 +215,10 @@ const loadedConfig = loadConfig(configPath);
 const overlay = loadPlanOverlay(planOverlayPathForConfig(configPath));
 const config = applyPlanOverlayToConfig(loadedConfig, overlay);
 validateConfigSemantics(config);
+```
+
+```ts
+// Docker smoke executes snippets through the full standalone runtime.
+execFileSync(process.execPath, [cliPath, "build", "--config", configPath, "--output", outputPath, "--quiet"]);
+injectDotRunPreset(outputPath, ids);
 ```

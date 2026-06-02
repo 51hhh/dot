@@ -53,10 +53,83 @@ dot_print_summary() {
   done
 }
 
+dot_run_selected_plan() {
+  local selected_count=0
+
+  if [[ "$#" -eq 0 && -n "@{DOT_RUN_PRESET:-}" ]]; then
+    set -- --select $DOT_RUN_PRESET
+  fi
+
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --select)
+        shift
+        if [[ "$#" -eq 0 || "@{1:-}" == --* ]]; then
+          log_error "--select requires at least one id"
+          dot_print_run_plan_usage
+          return 1
+        fi
+        while [[ "$#" -gt 0 ]]; do
+          case "$1" in
+            --*) break ;;
+          esac
+          dot_select_plan_item "$1" || return 1
+          selected_count=$((selected_count + 1))
+          shift
+        done
+        ;;
+      -h|--help)
+        dot_print_run_plan_usage
+        return 0
+        ;;
+      *)
+        log_error "Unsupported run-plan argument: $1"
+        dot_print_run_plan_usage
+        return 1
+        ;;
+    esac
+  done
+
+  if [[ "$selected_count" -eq 0 ]]; then
+    log_error "--run-plan requires --select <ids...>"
+    dot_print_run_plan_usage
+    return 1
+  fi
+
+  dot_build_plan
+  if [[ "@{#DOT_PLAN[@]}" -eq 0 ]]; then
+    log_warn "No runnable items selected."
+    return 1
+  fi
+
+  dot_execute_plan
+  dot_print_summary
+
+  local id status
+  for id in "@{DOT_PLAN[@]}"; do
+    status="@{DOT_RESULTS[$id]:-not-run}"
+    case "$status" in
+      ok) ;;
+      *) return 1 ;;
+    esac
+  done
+}
+
 dot_main() {
   if [[ "@{1:-}" == "--dry-run-plan" ]]; then
     shift
     dot_dry_run_plan "$@"
+    exit $?
+  fi
+
+  if [[ "@{1:-}" == "--run-plan" ]]; then
+    shift
+    dot_run_selected_plan "$@"
+    exit $?
+  fi
+
+  if [[ "$#" -eq 0 && -n "@{DOT_RUN_PRESET:-}" ]]; then
+    dot_run_selected_plan
     exit $?
   fi
 
