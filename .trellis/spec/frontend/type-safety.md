@@ -133,7 +133,6 @@ export function buildStudioGraph(
   options?: {
     showDependencies?: boolean;
     expandedNodeIds?: ReadonlySet<string>;
-    focusedNodeId?: string;
   }
 ): StudioGraph;
 ```
@@ -150,10 +149,10 @@ export function buildStudioGraph(
 - Nested flows such as `tmux-plugins` are collapsed by default and expand only when their id is present in `expandedNodeIds`.
 - Expanded nested-flow nodes and their single/multi/post children render as real visible draggable nodes and edges.
 - Studio nodes must keep `targetPosition: Position.Left` and `sourcePosition: Position.Right`.
-- When `focusedNodeId` is omitted, Studio projection may render the full graph for tests and diagnostics.
-- When `focusedNodeId` is the plan root, Studio must render a compact tool-selection view containing the root and top-level tool nodes only.
-- When `focusedNodeId` belongs to a top-level tool subtree, Studio must expand only that top-level tool and keep sibling tools collapsed.
+- Studio projection renders the full visible graph by default; do not collapse top-level tools just because a node is selected.
 - Local single/multi/post branch columns must not visually intrude into the next primary flow column.
+- Large terminal option groups should wrap into local columns instead of forming one long vertical stack.
+- Primary flow edges should not cross unrelated local branch edges in the projected full graph.
 - Root-level tool modules must occupy separate vertical bands when expanded; preventing node overlap alone is not enough.
 
 ### 4. Validation & Error Matrix
@@ -167,9 +166,9 @@ export function buildStudioGraph(
 | Flow child has its own local flow | It is collapsed by default and represented by `data.nestedFlow` |
 | Flow child is expanded | Its local flow nodes render below/near the parent with `nested: true` edges |
 | Post children exist under a step | They appear as projected nodes and visible `post` edges, outside `primarySpines` |
-| `focusedNodeId` is the root | Only root-level tool choices are visible; child install/config steps are compacted |
-| `focusedNodeId` is a descendant such as `zsh-plugin-autosuggestions` | Only the owning top-level module, `zsh`, expands |
 | Local branch node sits before the next flow step | Its right edge plus node gap is less than or equal to the next flow column x position |
+| Terminal option group has more than four choices | Choices wrap into multiple local columns |
+| Primary flow edge and unrelated local branch edge are projected | Straight-line segment approximation reports no crossing |
 | Multiple top-level modules are expanded | The next module's top bound starts after the previous module's bottom bound plus gap |
 
 ### 5. Good/Base/Bad Cases
@@ -178,12 +177,11 @@ export function buildStudioGraph(
 - Base: `tmux-prefix` displays Ctrl+A/Ctrl+B/custom choices as draggable option nodes near the prefix step.
 - Base: `tmux-options` displays option choices as draggable option nodes near the options step.
 - Base: `tmux-plugins` shows a collapsed nested-flow summary until expanded.
-- Base: selecting the plan root shows compact tool entries instead of expanding every tool's full workflow.
-- Base: selecting a Zsh child in the tree expands the Zsh module while Tmux and SSH stay collapsed.
+- Base: Zsh recovery and SSH hardening options wrap into multiple local columns.
 - Bad: dependency edges are visible by default and cross the main canvas.
 - Bad: single/multi choices are compacted into text-only card data.
 - Bad: post nodes create normal flow branches that suggest they run before the next macro step.
-- Bad: the root tool-selection view expands all tool flows into one huge canvas by default.
+- Bad: a large terminal option group forms one long vertical stack.
 - Bad: local option cards overlap or occupy the same visual column as the next flow step.
 
 ### 6. Tests Required
@@ -193,9 +191,9 @@ export function buildStudioGraph(
 - Studio projection test: dependencies are hidden by default and toggled on explicitly.
 - Studio projection test: nested `tmux-plugins` flow is collapsed by default and expands locally.
 - Studio projection test: post nodes render visibly but stay out of the main spine.
-- Studio projection test: root focus keeps only top-level tools visible.
-- Studio projection test: descendant focus expands only the owning top-level module.
 - Studio projection test: branch columns stay clear of the next primary flow column.
+- Studio projection test: large terminal option groups wrap into multiple columns.
+- Studio projection test: primary flow edges do not cross unrelated local branch edges.
 - Studio projection test: expanded top-level modules occupy separate vertical bands.
 - Build check: `npm run build` must still produce the Studio bundle.
 
