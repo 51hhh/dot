@@ -99,10 +99,40 @@ dot_known_id() {
   return 1
 }
 
+dot_has_ambiguous_single_choice() {
+  local id="$1" child visible_children=0
+
+  if [[ "@{DOT_EXPLICIT_MODES[$id]:-}" == "single" ]]; then
+    for child in @{DOT_CHILDREN[$id]:-}; do
+      if [[ "@{DOT_HIDDEN[$child]:-0}" != "1" ]]; then
+        visible_children=$((visible_children + 1))
+      fi
+    done
+    if [[ "$visible_children" -gt 1 ]]; then
+      DOT_AMBIGUOUS_SINGLE_ID="$id"
+      return 0
+    fi
+  fi
+
+  for child in @{DOT_CHILDREN[$id]:-}; do
+    if dot_has_ambiguous_single_choice "$child"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 dot_select_plan_item() {
   local id="$1" leaf
   if ! dot_known_id "$id"; then
     log_error "Unknown menu item id: $id"
+    return 1
+  fi
+
+  DOT_AMBIGUOUS_SINGLE_ID=""
+  if dot_has_ambiguous_single_choice "$id"; then
+    log_error "Menu item $id contains single-choice group $DOT_AMBIGUOUS_SINGLE_ID; select one concrete option id instead."
     return 1
   fi
 

@@ -28,8 +28,11 @@ RECOMMENDED_SETTINGS='    ServerAliveInterval 60
     HashKnownHosts yes
     IdentityFile ~/.ssh/id_ed25519'
 
-tmp="$(mktemp 2>/dev/null || mktemp -t dot-ssh-config)"
-awk -v settings="$RECOMMENDED_SETTINGS" '
+if ! tmp="$(mktemp 2>/dev/null || mktemp -t dot-ssh-config)"; then
+  log_error "无法创建临时文件。"
+  return 1
+fi
+if ! awk -v settings="$RECOMMENDED_SETTINGS" '
   /^Host \*$/ && !seen_host_star {
     print
     seen_host_star = 1
@@ -41,7 +44,7 @@ awk -v settings="$RECOMMENDED_SETTINGS" '
     printf "%s\n", settings
     printed = 1
   }
-  /^\s+ServerAlive/ || /^\s+AddKeysToAgent/ || /^\s+HashKnownHosts/ || /^\s+IdentityFile/ {
+  /^[[:space:]]+ServerAlive/ || /^[[:space:]]+AddKeysToAgent/ || /^[[:space:]]+HashKnownHosts/ || /^[[:space:]]+IdentityFile/ {
     # 跳过旧的推荐设置行
     next
   }
@@ -51,8 +54,21 @@ awk -v settings="$RECOMMENDED_SETTINGS" '
       printf "%s\n", settings
     }
   }
-' "$SSH_CONFIG" > "$tmp" && mv "$tmp" "$SSH_CONFIG"
+' "$SSH_CONFIG" > "$tmp"; then
+  rm -f "$tmp"
+  log_error "生成推荐 ~/.ssh/config 失败。"
+  return 1
+fi
 
-chmod 600 "$SSH_CONFIG"
+if ! mv "$tmp" "$SSH_CONFIG"; then
+  rm -f "$tmp"
+  log_error "写回推荐 ~/.ssh/config 失败。"
+  return 1
+fi
+
+if ! chmod 600 "$SSH_CONFIG"; then
+  log_error "设置 ~/.ssh/config 权限失败。"
+  return 1
+fi
 
 log_ok "推荐 ~/.ssh/config 已写入（KeepAlive、HashKnownHosts、AddKeysToAgent、IdentityFile）"

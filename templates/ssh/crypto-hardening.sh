@@ -12,22 +12,38 @@ if grep -Eq '^[[:space:]]*KexAlgorithms[[:space:]]+curve25519-sha256' "$SSHD_CON
   log_info "现代密码套件已配置，跳过。"
 else
   TIMESTAMP="$(date +%Y%m%d%H%M%S)"
-  dot_sudo cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.${TIMESTAMP}"
+  if ! dot_sudo cp "$SSHD_CONFIG" "${SSHD_CONFIG}.bak.${TIMESTAMP}"; then
+    log_error "备份 sshd_config 失败。"
+    return 1
+  fi
   log_info "已备份 sshd_config -> ${SSHD_CONFIG}.bak.${TIMESTAMP}"
 
-  dot_sudo sed -i '/^#\?KexAlgorithms/d' "$SSHD_CONFIG"
-  dot_sudo sed -i '/^#\?Ciphers/d' "$SSHD_CONFIG"
-  dot_sudo sed -i '/^#\?MACs/d' "$SSHD_CONFIG"
+  if ! dot_sudo sed -E -i '/^[[:space:]]*#?[[:space:]]*KexAlgorithms[[:space:]]+/d' "$SSHD_CONFIG"; then
+    log_error "移除旧 KexAlgorithms 配置失败。"
+    return 1
+  fi
+  if ! dot_sudo sed -E -i '/^[[:space:]]*#?[[:space:]]*Ciphers[[:space:]]+/d' "$SSHD_CONFIG"; then
+    log_error "移除旧 Ciphers 配置失败。"
+    return 1
+  fi
+  if ! dot_sudo sed -E -i '/^[[:space:]]*#?[[:space:]]*MACs[[:space:]]+/d' "$SSHD_CONFIG"; then
+    log_error "移除旧 MACs 配置失败。"
+    return 1
+  fi
 
-  cat <<EOF | dot_sudo tee -a "$SSHD_CONFIG" >/dev/null
+  if ! cat <<EOF | dot_sudo tee -a "$SSHD_CONFIG" >/dev/null
 KexAlgorithms ${KEX}
 Ciphers ${CIPHERS}
 MACs ${MACS}
 EOF
+  then
+    log_error "写入现代密码套件配置失败。"
+    return 1
+  fi
 
   if ! dot_sudo sshd -t 2>/dev/null; then
     log_error "sshd 配置验证失败，已恢复备份。"
-    dot_sudo cp "${SSHD_CONFIG}.bak.${TIMESTAMP}" "$SSHD_CONFIG"
+    dot_sudo cp "${SSHD_CONFIG}.bak.${TIMESTAMP}" "$SSHD_CONFIG" || log_error "恢复 sshd_config 备份失败，请手动恢复。"
     return 1
   fi
 fi
@@ -37,8 +53,26 @@ MODULI="/etc/ssh/moduli"
 if [[ -f "$MODULI" ]]; then
   strong_count=$(awk '$5 >= 3071' "$MODULI" | wc -l)
   if [[ "$strong_count" -gt 0 ]]; then
-    dot_sudo awk '$5 >= 3071' "$MODULI" | dot_sudo tee "${MODULI}.safe" >/dev/null
-    dot_sudo mv "${MODULI}.safe" "$MODULI"
+    if ! MODULI_TMP="$(mktemp 2>/dev/null || mktemp -t dot-ssh-moduli)"; then
+      log_error "无法创建 DH moduli 临时文件。"
+      return 1
+    fi
+    if ! dot_sudo awk '$5 >= 3071' "$MODULI" > "$MODULI_TMP"; then
+      rm -f "$MODULI_TMP"
+      log_error "过滤 DH moduli 失败。"
+      return 1
+    fi
+    if ! dot_sudo cp "$MODULI" "${MODULI}.bak.$(date +%Y%m%d%H%M%S)"; then
+      rm -f "$MODULI_TMP"
+      log_error "备份 DH moduli 失败。"
+      return 1
+    fi
+    if ! dot_sudo cp "$MODULI_TMP" "$MODULI"; then
+      rm -f "$MODULI_TMP"
+      log_error "写回 DH moduli 失败。"
+      return 1
+    fi
+    rm -f "$MODULI_TMP"
     log_ok "已过滤弱 DH moduli（保留 >= 3071 bit）"
   else
     log_warn "moduli 文件中无 >= 3071 bit 的条目，请手动替换 moduli 文件"

@@ -808,4 +808,54 @@ printf 'mirrored=%s\\n' "$(dot_github_url "https://selected.example/" "https://g
     }
   });
 
+  it("rejects noninteractive branch selection when it contains an explicit single-choice group", () => {
+    const dir = tmpDir();
+
+    try {
+      const installPath = writeTmpFile(dir, "install.sh", "echo install");
+      const skipPath = writeTmpFile(dir, "skip.sh", "echo skip");
+      const config: Config = {
+        name: "dot",
+        version: "1.0",
+        output: { filename: "dot.sh", dir },
+        menu: [
+          {
+            id: "zsh",
+            label: "Zsh",
+            mode: "flow",
+            children: [
+              {
+                id: "zsh-oh-my-zsh",
+                label: "Oh My Zsh",
+                mode: "single",
+                children: [
+                  { id: "zsh-oh-my-zsh-install", label: "Install", script: installPath },
+                  { id: "zsh-oh-my-zsh-skip", label: "Skip", script: skipPath },
+                ],
+              },
+            ],
+          },
+        ],
+      };
+
+      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      expectBashSyntaxValid(generated);
+
+      const scriptPath = path.join(dir, "dot.sh");
+      fs.writeFileSync(scriptPath, generated);
+      const result = spawnSync("bash", [scriptPath, "--dry-run-plan", "--select", "zsh"], {
+        cwd: dir,
+        encoding: "utf-8",
+        timeout: 5000,
+      });
+
+      expect(result.status).toBe(1);
+      expect(result.stdout).toContain("single-choice group zsh-oh-my-zsh");
+      expect(result.stdout).not.toContain("[zsh-oh-my-zsh-install]");
+      expect(result.stdout).not.toContain("[zsh-oh-my-zsh-skip]");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
 });

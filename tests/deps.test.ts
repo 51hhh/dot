@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { flattenNodes, getLeafIds, resolveDeps, topoSort } from "../src/utils/deps.js";
+import { flattenNodes, getLeafIds, resolveDeps, topoSort, findAmbiguousSingleChoiceBranch } from "../src/utils/deps.js";
 import type { MenuItem } from "../src/loader/schema.js";
 
 const makeNode = (id: string, opts: Partial<MenuItem> = {}): MenuItem => ({
@@ -42,6 +42,30 @@ describe("getLeafIds", () => {
 
   it("empty children treated as leaf", () => {
     expect(getLeafIds(makeNode("a", { children: [] }))).toEqual(["a"]);
+  });
+});
+
+describe("findAmbiguousSingleChoiceBranch", () => {
+  it("finds explicit single branches with multiple visible children", () => {
+    const node = makeNode("root", {
+      mode: "flow",
+      children: [
+        makeNode("install", {
+          mode: "single",
+          children: [makeNode("apt"), makeNode("skip")],
+        }),
+      ],
+    });
+
+    expect(findAmbiguousSingleChoiceBranch(node)?.id).toBe("install");
+  });
+
+  it("ignores legacy branches without explicit single mode", () => {
+    const node = makeNode("plugins", {
+      children: [makeNode("a"), makeNode("b")],
+    });
+
+    expect(findAmbiguousSingleChoiceBranch(node)).toBeUndefined();
   });
 });
 

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify proposed menu structure matches flow/single/multi semantics"}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Verify implementation plan includes generated script checks"}

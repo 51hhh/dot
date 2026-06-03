@@ -130,8 +130,10 @@ assembleStandalone(opts: {
 - Generated script ids must be shell-safe: only letters, digits, `_`, and `-`.
 - Generated function names must normalize ids and include a stable suffix to avoid collisions.
 - Generated `dot.sh --dry-run-plan --select <ids...>` must be noninteractive: select the requested ids, expand branch ids to runnable leaves, include dependencies through the same runtime planner used by interactive execution, print the resolved plan, and exit before running snippets.
+- Branch expansion is only valid when the selected subtree does not contain an explicit `mode: "single"` choice group with multiple visible children. If a selected id contains such a group, `--dry-run-plan` must fail before planning and tell the user to select a concrete option id. This prevents automation from selecting mutually exclusive choices such as install + skip.
 - Dry-run plan output must show normal steps before post steps, and must include ids so CI can assert dependency and post ordering without localized label coupling.
 - Generated `dot.sh --run-plan --select <ids...>` must be noninteractive: select the requested ids, expand branch ids to runnable leaves, include dependencies through the same runtime planner used by interactive execution, execute snippets inside the standalone runtime helper environment, print a summary, and exit non-zero if any planned step fails or is skipped.
+- `--run-plan` must apply the same explicit single-choice rejection as `--dry-run-plan` before executing any snippet.
 - `DOT_RUN_PRESET="<ids...>"` is an integration-test hook for generated standalone scripts. When no CLI args are provided, the runtime must treat it like `--run-plan --select <ids...>` so Docker smoke tests can execute selected snippets without driving the TUI.
 - Docker smoke generation must build a full standalone script and inject `DOT_RUN_PRESET`; it must not use the legacy `dot --dry-run --select` snippet output because snippets can rely on runtime helpers such as `dot_sudo`.
 
@@ -150,7 +152,9 @@ assembleStandalone(opts: {
 | Generated bash syntax invalid | `validateScript` reports `bash -n` failure and build exits non-zero |
 | Generated `--dry-run-plan` receives an unknown id | Script exits non-zero and reports `Unknown menu item id` without running snippets |
 | Generated `--dry-run-plan` receives no selection | Script exits non-zero and prints usage without entering the interactive TUI |
+| Generated `--dry-run-plan` receives a branch containing an explicit multi-option `single` group | Script exits non-zero, reports the ambiguous single-choice group id, and prints no resolved plan |
 | Generated `--run-plan` receives an unknown id | Script exits non-zero and reports `Unknown menu item id` without running snippets |
+| Generated `--run-plan` receives a branch containing an explicit multi-option `single` group | Script exits non-zero before executing snippets |
 | Generated `--run-plan` receives a snippet failure | Script prints the summary and exits non-zero so Docker/CI fail |
 | Docker smoke generation uses legacy `dot --dry-run --select` snippet output | Invalid: generated snippets may call standalone runtime helpers that are absent from the legacy snippet-only script |
 
@@ -158,10 +162,12 @@ assembleStandalone(opts: {
 
 - Good: `node dist/index.js build --config configs/tmux.yaml --output dist/dot.sh --quiet` creates a valid self-contained script.
 - Good: `bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize` prints `tmux-header` and `tmux-tpm` before `tmux-plugin-resurrect`, then prints post steps after normal steps.
+- Good: `bash dist/dot.sh --dry-run-plan --select zsh-install-apt zsh-oh-my-zsh-install` selects concrete single-choice leaves and never includes `zsh-oh-my-zsh-skip`.
 - Good: `bash dist/dot.sh --run-plan --select feature` executes `feature` and its dependencies inside the generated runtime and returns non-zero if any step fails.
 - Good: `configs/dot.plan.json` can hide a node or override its label, and the generated `DOT_HIDDEN` / `DOT_LABELS` metadata reflects that change.
 - Base: generated script contains `dot_navigate()`, `DOT_CHILDREN['__root']`, and `dot_main "$@"`.
 - Bad: an id like `bad.id` is rejected instead of producing an invalid bash function or associative-array key.
+- Bad: `bash dist/dot.sh --dry-run-plan --select zsh` expands all `zsh` leaves and includes both install and skip choices.
 - Bad: sidecar JSON is cast to `PlanOverlay` without validation.
 - Bad: an overlay changes `post` behavior without rerunning dependency/post semantic validation.
 - Bad: an overlay can replace a node `script` path and silently change executed code.
@@ -177,6 +183,7 @@ assembleStandalone(opts: {
 - CLI: sidecar overlay affects generated build metadata for safe fields.
 - CLI: overlay-created dependency/post conflicts fail before writing output.
 - CLI: generated script `--dry-run-plan --select ...` prints dependency-expanded normal steps before post steps and does not print snippet command output.
+- CLI/generated script: selecting a branch with an explicit multi-option `single` group fails before plan output; selecting concrete leaves under that group succeeds.
 - CLI: generated script `--run-plan --select ...` executes dependency-expanded snippets in order and returns non-zero on failed/skipped steps.
 - Integration: generated `dist/dot.sh` passes `bash -n`.
 - Integration: Docker smoke builds a full standalone script, injects `DOT_RUN_PRESET`, and validates real tmux installation/configuration in Ubuntu.
@@ -201,6 +208,11 @@ const config = applyPlanOverlayToConfig(loadConfig(configPath), overlay);
 const script = execFileSync(process.execPath, [cliPath, "--select", ...ids, "--dry-run"]);
 ```
 
+```bash
+# Expands mutually exclusive choices at once.
+bash dist/dot.sh --dry-run-plan --select zsh
+```
+
 #### Correct
 
 ```ts
@@ -221,4 +233,9 @@ validateConfigSemantics(config);
 // Docker smoke executes snippets through the full standalone runtime.
 execFileSync(process.execPath, [cliPath, "build", "--config", configPath, "--output", outputPath, "--quiet"]);
 injectDotRunPreset(outputPath, ids);
+```
+
+```bash
+# Select concrete option ids under explicit single-choice groups.
+bash dist/dot.sh --dry-run-plan --select zsh-install-apt zsh-oh-my-zsh-install
 ```

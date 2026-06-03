@@ -24,6 +24,26 @@ export function getLeafIds(node: MenuItem): string[] {
 }
 
 /**
+ * Finds an explicit single-choice branch inside a subtree.
+ *
+ * Noninteractive selection can safely expand multi/flow branches, but expanding
+ * a single-choice branch would select mutually exclusive options at once.
+ */
+export function findAmbiguousSingleChoiceBranch(node: MenuItem): MenuItem | undefined {
+  const visibleChildren = (node.children ?? []).filter((child) => !child.hidden);
+  if (node.mode === "single" && visibleChildren.length > 1) {
+    return node;
+  }
+
+  for (const child of visibleChildren) {
+    const match = findAmbiguousSingleChoiceBranch(child);
+    if (match) return match;
+  }
+
+  return undefined;
+}
+
+/**
  * Resolve dependencies for a set of selected ids.
  * Returns the full set including auto-resolved deps.
  */

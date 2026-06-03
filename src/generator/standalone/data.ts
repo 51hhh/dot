@@ -28,6 +28,7 @@ export function serializeStandaloneData({
     "declare -A DOT_DEPS=()",
     "declare -A DOT_LEAVES=()",
     "declare -A DOT_MODES=()",
+    "declare -A DOT_EXPLICIT_MODES=()",
     "declare -A DOT_HIDDEN=()",
     "declare -A DOT_PROMPT_TYPES=()",
     "declare -A DOT_PROMPT_VARS=()",
@@ -39,6 +40,7 @@ export function serializeStandaloneData({
     assocAssign("DOT_DESCRIPTIONS", ROOT_ID, config.description ?? ""),
     assocAssign("DOT_CHILDREN", ROOT_ID, config.menu.map((item) => item.id).join(" ")),
     assocAssign("DOT_MODES", ROOT_ID, rootMode),
+    assocAssign("DOT_EXPLICIT_MODES", ROOT_ID, config.menuMode ?? ""),
     assocAssign("DOT_HIDDEN", ROOT_ID, "0"),
     assocAssign("DOT_PROMPT_TYPES", ROOT_ID, ""),
     assocAssign("DOT_PROMPT_VARS", ROOT_ID, ""),
@@ -57,6 +59,7 @@ export function serializeStandaloneData({
     lines.push(assocAssign("DOT_DEPS", id, deps));
     lines.push(assocAssign("DOT_LEAVES", id, leaves));
     lines.push(assocAssign("DOT_MODES", id, buildNode.mode === "root" ? rootMode : buildNode.mode ?? inheritedModes.get(id) ?? rootMode));
+    lines.push(assocAssign("DOT_EXPLICIT_MODES", id, node.mode ?? ""));
     lines.push(assocAssign("DOT_HIDDEN", id, buildNode.hidden ? "1" : "0"));
     lines.push(assocAssign("DOT_PROMPT_TYPES", id, buildNode.prompt?.type ?? ""));
     lines.push(assocAssign("DOT_PROMPT_VARS", id, buildNode.prompt?.var ?? ""));

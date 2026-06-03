@@ -4,7 +4,7 @@ import path from "node:path";
 import { loadConfig } from "./loader/loader.js";
 import { banner, c } from "./utils/colors.js";
 import { navigate } from "./menu/navigator.js";
-import { flattenNodes, resolveDeps, getLeafIds } from "./utils/deps.js";
+import { flattenNodes, resolveDeps, getLeafIds, findAmbiguousSingleChoiceBranch } from "./utils/deps.js";
 import { isLeaf } from "./menu/tree.js";
 import { assemble } from "./generator/assembler.js";
 import { assembleStandalone } from "./generator/standalone-assembler.js";
@@ -116,6 +116,12 @@ async function run(opts: {
       if (isLeaf(node)) {
         expanded.add(id);
       } else {
+        const ambiguous = findAmbiguousSingleChoiceBranch(node);
+        if (ambiguous) {
+          throw new Error(
+            `Menu item "${id}" contains single-choice group "${ambiguous.id}". Select one concrete option id instead.`
+          );
+        }
         for (const leafId of getLeafIds(node)) {
           expanded.add(leafId);
         }

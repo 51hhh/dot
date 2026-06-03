@@ -27,6 +27,12 @@ if [[ -f /etc/ssh/sshd_config ]]; then
   fi
 fi
 
+if ! [[ "$SSH_PORT" =~ ^[0-9]+$ ]] || [[ "${#SSH_PORT}" -gt 5 ]] || [[ "$((10#$SSH_PORT))" -lt 1 || "$((10#$SSH_PORT))" -gt 65535 ]]; then
+  log_error "检测到无效 SSH 端口，拒绝写入 UFW 规则: $SSH_PORT"
+  return 1
+fi
+SSH_PORT="$((10#$SSH_PORT))"
+
 # 幂等：检查是否已有该端口的 limit 规则
 if dot_sudo ufw status 2>/dev/null | grep -q "${SSH_PORT}/tcp.*LIMIT"; then
   log_info "UFW 已有 SSH 端口 ${SSH_PORT}/tcp 的 limit 规则，跳过添加。"

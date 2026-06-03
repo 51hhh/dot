@@ -83,6 +83,15 @@ describe("CLI --select", () => {
     expect(stdout).toContain("tmux-plugin-yank");
   });
 
+  it("rejects branch selections that contain explicit single-choice groups", () => {
+    const { exitCode } = run([
+      "--config", dotConfig,
+      "--select", "zsh",
+      "--quiet", "--dry-run",
+    ]);
+    expect(exitCode).toBe(1);
+  });
+
   it("auto-resolves dependencies", () => {
     const { stdout, exitCode } = run([
       "--config", config,
@@ -661,6 +670,9 @@ describe("CLI build dot config", () => {
 
     // SSH metadata and template content
     expect(script).toContain("DOT_MODES['ssh']='multi'");
+    expect(script).toContain("DOT_EXPLICIT_MODES['zsh-oh-my-zsh']='single'");
+    expect(script).toContain("dot_has_ambiguous_single_choice()");
+    expect(script).toContain("single-choice group");
     expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh zsh-recovery ssh'");
     expect(script).toContain("DOT_CHILDREN['ssh-install']='ssh-install-apt ssh-install-skip'");
     expect(script).toContain("DOT_CHILDREN['ssh-hostkey']='ssh-hostkey-regen ssh-hostkey-keep'");
@@ -687,6 +699,14 @@ describe("CLI build dot config", () => {
     expect(script).toContain("openssh-server");
     expect(script).toContain("ssh-keygen -t ed25519");
     expect(script).toContain("sshd_config");
+    expect(script).toContain("dot_sshd_set_option");
+    expect(script).toContain("DOT_CONFIRM_SSH_DISABLE_PASSWORD");
+    expect(script).toContain("DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT");
+    expect(script).toContain("AllowUsers 条目格式不安全");
+    expect(script).toContain("JAIL_TMP");
+    expect(script).toContain("[[:space:]]+ServerAlive");
+    expect(script).toContain("移除将要重新生成的强密钥");
+    expect(script).toContain("检测到无效 SSH 端口");
     expect(script).toContain("fail2ban");
     expect(script).toContain("authorized_keys");
     expect(script).toContain("SSH 后续操作提示已显示");
