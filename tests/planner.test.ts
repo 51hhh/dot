@@ -573,12 +573,13 @@ describe("buildInstallationPlan", () => {
     );
   });
 
-  it("keeps the real zsh flow as ordered setup steps with final notes post", () => {
+  it("keeps the real zsh flow as ordered setup and recovery steps with final notes post", () => {
     const config = loadConfig(path.resolve(import.meta.dirname, "../configs/dot.yaml"));
     const plan = buildInstallationPlan(config);
     const mainFlow = [
       "zsh-diagnose",
       "zsh-install",
+      "zsh-recovery",
       "zsh-oh-my-zsh",
       "zsh-powerlevel10k",
       "zsh-plugins",
@@ -591,8 +592,9 @@ describe("buildInstallationPlan", () => {
     for (let index = 0; index < mainFlow.length - 1; index += 1) {
       expect(plan.edges).toContainEqual({ from: mainFlow[index], to: mainFlow[index + 1], type: "flow" });
     }
+    expect(plan.edges).toContainEqual({ from: "zsh-install", to: "zsh-recovery", type: "flow" });
     expect(plan.edges).toContainEqual({ from: "zsh-default-shell", to: "zsh-final-notes", type: "post" });
-    expect(plan.edges).toContainEqual({ from: "__root", to: "zsh-recovery", type: "single" });
+    expect(plan.edges).not.toContainEqual({ from: "__root", to: "zsh-recovery", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-install", to: "zsh-install-apt", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-install", to: "zsh-install-skip", type: "single" });
     expect(plan.edges).toContainEqual({ from: "zsh-oh-my-zsh", to: "zsh-oh-my-zsh-install", type: "single" });
