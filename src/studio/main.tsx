@@ -92,7 +92,9 @@ function App() {
   const [plan, setPlan] = useState<StudioPlan | null>(null);
   const [nodes, setNodes] = useState<PlanFlowNode[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [manualPositions, setManualPositions] = useState<Map<string, { x: number; y: number }>>(() => new Map());
   const [selectedId, setSelectedId] = useState<string>("");
+  const [focusRequestId, setFocusRequestId] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showDependencies, setShowDependencies] = useState(false);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
@@ -126,20 +128,25 @@ function App() {
 
   useEffect(() => {
     if (!plan) return;
-    const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds });
-    setNodes((current) => {
-      const currentPositions = new Map(current.map((node) => [node.id, node.position]));
-      return projection.nodes.map((node) => ({
-        id: node.id,
-        type: "planNode",
-        position: currentPositions.get(node.id) ?? node.position,
-        sourcePosition: Position.Right,
-        targetPosition: Position.Left,
-        data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
-      }));
-    });
+    const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds, focusedNodeId: selectedId });
+    setNodes(projection.nodes.map((node) => ({
+      id: node.id,
+      type: "planNode",
+      position: manualPositions.get(node.id) ?? node.position,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
+    })));
     setEdges(buildReactFlowEdges(projection.edges, draftEdgeChanges));
-  }, [draftEdgeChanges, expandedNodeIds, plan, selectNode, showDependencies, toggleNodeExpansion]);
+  }, [draftEdgeChanges, expandedNodeIds, manualPositions, plan, selectNode, selectedId, showDependencies, toggleNodeExpansion]);
+
+  useEffect(() => {
+    if (!focusRequestId || !reactFlowInstance) return;
+    const node = nodes.find((item) => item.id === focusRequestId);
+    if (!node) return;
+    reactFlowInstance.setCenter(node.position.x + 114, node.position.y + 42, { zoom: 1.1, duration: 450 });
+    setFocusRequestId("");
+  }, [focusRequestId, nodes, reactFlowInstance]);
 
   const onNodesChange = useCallback((changes: NodeChange<PlanFlowNode>[]) => {
     setNodes((current) => applyNodeChanges(changes.filter((change) => change.type !== "remove"), current));
@@ -193,15 +200,17 @@ function App() {
 
   const onNodeDragStop: OnNodeDrag<PlanFlowNode> = useCallback((_event, node) => {
     setNodes((current) => current.map((item) => item.id === node.id ? { ...item, position: node.position } : item));
+    setManualPositions((current) => {
+      const next = new Map(current);
+      next.set(node.id, node.position);
+      return next;
+    });
   }, []);
 
   const focusNode = useCallback((id: string) => {
     setSelectedId(id);
-    const node = nodes.find((item) => item.id === id);
-    if (node && reactFlowInstance) {
-      reactFlowInstance.setCenter(node.position.x + 114, node.position.y + 42, { zoom: 1.1, duration: 450 });
-    }
-  }, [nodes, reactFlowInstance]);
+    setFocusRequestId(id);
+  }, []);
 
   const saveLayout = useCallback(async () => {
     const positions = Object.fromEntries(nodes.map((node) => [node.id, node.position]));
@@ -230,6 +239,7 @@ function App() {
 
     if (payload?.plan) {
       setPlan(payload.plan);
+      setManualPositions(new Map());
     }
     setStatus("Saved");
   }, [nodes, plan?.overlay]);

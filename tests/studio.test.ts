@@ -23,6 +23,31 @@ function expectNoProjectedNodeOverlap(graph: ReturnType<typeof buildStudioGraph>
   }
 }
 
+function structureEdgesFrom(plan: ReturnType<typeof buildInstallationPlan>, from: string) {
+  return plan.edges.filter((edge) => edge.from === from && edge.type !== "dependency" && edge.type !== "child");
+}
+
+function collectVisibleDescendants(
+  plan: ReturnType<typeof buildInstallationPlan>,
+  graph: ReturnType<typeof buildStudioGraph>,
+  rootId: string
+) {
+  const visibleIds = new Set(graph.nodes.map((node) => node.id));
+  const collected = new Set<string>();
+  const stack = [rootId];
+
+  while (stack.length > 0) {
+    const id = stack.pop()!;
+    if (collected.has(id)) continue;
+    collected.add(id);
+    for (const edge of structureEdgesFrom(plan, id)) {
+      stack.push(edge.to);
+    }
+  }
+
+  return graph.nodes.filter((node) => visibleIds.has(node.id) && collected.has(node.id));
+}
+
 describe("studio canvas", () => {
   it("checks Studio asset paths with path-relative directory boundaries", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/server.ts"), "utf-8");
@@ -40,7 +65,9 @@ describe("studio canvas", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/main.tsx"), "utf-8");
     const css = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/studio.css"), "utf-8");
 
-    expect(source).toContain("buildStudioGraph(plan, { showDependencies, expandedNodeIds })");
+    expect(source).toContain("buildStudioGraph(plan, { showDependencies, expandedNodeIds, focusedNodeId: selectedId })");
+    expect(source).toContain("manualPositions");
+    expect(source).toContain("focusRequestId");
     expect(source).toContain("badgeForNode(data)");
     expect(source).toContain("badgeForNodeId(node.id, plan)");
     expect(source).toContain("single = exclusive branch");
@@ -163,6 +190,86 @@ describe("studio canvas", () => {
     expect(mouse.position.x).toBeGreaterThan(options.position.x);
     expect(mouse.position.y).toBeGreaterThan(options.position.y);
     expect(cleanup.position.y).toBeGreaterThan(mouse.position.y);
+  });
+
+  it("keeps local branch columns clear of the next primary flow column", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const graph = buildStudioGraph(plan);
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+
+    for (const spine of Object.values(graph.primarySpines)) {
+      for (let index = 0; index < spine.length - 1; index += 1) {
+        const current = nodesById.get(spine[index]!);
+        const next = nodesById.get(spine[index + 1]!);
+        expect(current, `missing current spine node ${spine[index]}`).toBeDefined();
+        expect(next, `missing next spine node ${spine[index + 1]}`).toBeDefined();
+
+        const localBranches = structureEdgesFrom(plan, spine[index]!)
+          .filter((edge) => edge.type === "single" || edge.type === "multi" || edge.type === "post")
+          .map((edge) => nodesById.get(edge.to))
+          .filter((node): node is NonNullable<typeof node> => Boolean(node));
+
+        for (const branch of localBranches) {
+          expect(
+            branch.position.x + approxNodeWidth + minNodeGap <= next!.position.x,
+            `${branch.id} should stay before next spine column ${next!.id}`
+          ).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("keeps root-level tool modules in separate vertical bands", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const graph = buildStudioGraph(plan);
+    const rootChildren = structureEdgesFrom(plan, plan.root).filter((edge) => edge.type !== "post").map((edge) => edge.to);
+    const bands = rootChildren.map((id) => {
+      const descendants = collectVisibleDescendants(plan, graph, id);
+      return {
+        id,
+        minY: Math.min(...descendants.map((node) => node.position.y)),
+        maxY: Math.max(...descendants.map((node) => node.position.y + approxNodeHeight)),
+      };
+    });
+
+    for (let index = 1; index < bands.length; index += 1) {
+      expect(
+        bands[index]!.minY >= bands[index - 1]!.maxY + minNodeGap,
+        `${bands[index]!.id} should start below ${bands[index - 1]!.id}`
+      ).toBe(true);
+    }
+  });
+
+  it("keeps the root tool-selection view compact until a module is focused", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const graph = buildStudioGraph(plan, { focusedNodeId: "__root" });
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+
+    expect([...nodeIds]).toEqual(expect.arrayContaining(["__root", "tmux", "zsh", "ssh"]));
+    expect(nodeIds.has("tmux-install")).toBe(false);
+    expect(nodeIds.has("zsh-install")).toBe(false);
+    expect(nodeIds.has("ssh-install")).toBe(false);
+    expect(graph.compactNodeIds.has("tmux-install")).toBe(true);
+    expect(graph.compactNodeIds.has("zsh-install")).toBe(true);
+    expect(graph.compactNodeIds.has("ssh-install")).toBe(true);
+    expect(Object.keys(graph.primarySpines)).toHaveLength(0);
+    expectNoProjectedNodeOverlap(graph);
+  });
+
+  it("expands only the focused top-level module for tree navigation", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const graph = buildStudioGraph(plan, { focusedNodeId: "zsh-plugin-autosuggestions" });
+    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+
+    expect(nodeIds.has("tmux")).toBe(true);
+    expect(nodeIds.has("zsh")).toBe(true);
+    expect(nodeIds.has("ssh")).toBe(true);
+    expect(nodeIds.has("tmux-install")).toBe(false);
+    expect(nodeIds.has("zsh-install")).toBe(true);
+    expect(nodeIds.has("zsh-plugin-autosuggestions")).toBe(true);
+    expect(nodeIds.has("ssh-install")).toBe(false);
+    expect(Object.keys(graph.primarySpines)).toEqual(["zsh"]);
+    expectNoProjectedNodeOverlap(graph);
   });
 
   it("hides dependency edges by default and toggles them as low-emphasis dashed edges", () => {
