@@ -128,7 +128,7 @@ function App() {
 
   useEffect(() => {
     if (!plan) return;
-    const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds, focusedNodeId: selectedId });
+    const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds });
     setNodes(projection.nodes.map((node) => ({
       id: node.id,
       type: "planNode",
@@ -138,7 +138,7 @@ function App() {
       data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
     })));
     setEdges(buildReactFlowEdges(projection.edges, draftEdgeChanges));
-  }, [draftEdgeChanges, expandedNodeIds, manualPositions, plan, selectNode, selectedId, showDependencies, toggleNodeExpansion]);
+  }, [draftEdgeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion]);
 
   useEffect(() => {
     if (!focusRequestId || !reactFlowInstance) return;

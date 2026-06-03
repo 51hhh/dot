@@ -48,6 +48,31 @@ function collectVisibleDescendants(
   return graph.nodes.filter((node) => visibleIds.has(node.id) && collected.has(node.id));
 }
 
+function projectedEdgeSegment(graph: ReturnType<typeof buildStudioGraph>, edge: ReturnType<typeof buildStudioGraph>["edges"][number]) {
+  const source = graph.nodes.find((node) => node.id === edge.source);
+  const target = graph.nodes.find((node) => node.id === edge.target);
+  if (!source || !target) return null;
+  return {
+    a: { x: source.position.x + approxNodeWidth, y: source.position.y + approxNodeHeight / 2 },
+    b: { x: target.position.x, y: target.position.y + approxNodeHeight / 2 },
+  };
+}
+
+function segmentsIntersect(
+  first: NonNullable<ReturnType<typeof projectedEdgeSegment>>,
+  second: NonNullable<ReturnType<typeof projectedEdgeSegment>>
+) {
+  function direction(a: { x: number; y: number }, b: { x: number; y: number }, c: { x: number; y: number }) {
+    return (c.x - a.x) * (b.y - a.y) - (b.x - a.x) * (c.y - a.y);
+  }
+
+  const d1 = direction(first.a, first.b, second.a);
+  const d2 = direction(first.a, first.b, second.b);
+  const d3 = direction(second.a, second.b, first.a);
+  const d4 = direction(second.a, second.b, first.b);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}
+
 describe("studio canvas", () => {
   it("checks Studio asset paths with path-relative directory boundaries", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/server.ts"), "utf-8");
@@ -65,7 +90,7 @@ describe("studio canvas", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/main.tsx"), "utf-8");
     const css = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/studio.css"), "utf-8");
 
-    expect(source).toContain("buildStudioGraph(plan, { showDependencies, expandedNodeIds, focusedNodeId: selectedId })");
+    expect(source).toContain("buildStudioGraph(plan, { showDependencies, expandedNodeIds })");
     expect(source).toContain("manualPositions");
     expect(source).toContain("focusRequestId");
     expect(source).toContain("badgeForNode(data)");
@@ -219,6 +244,35 @@ describe("studio canvas", () => {
     }
   });
 
+  it("keeps primary flow edges clear of unrelated local branch edges", () => {
+    const graph = buildStudioGraph(buildInstallationPlan(loadConfig(dotConfig)));
+    const primaryFlowPairs = new Set<string>();
+    for (const spine of Object.values(graph.primarySpines)) {
+      for (let index = 0; index < spine.length - 1; index += 1) {
+        primaryFlowPairs.add(`${spine[index]}->${spine[index + 1]}`);
+      }
+    }
+
+    const primaryFlowEdges = graph.edges.filter((edge) => edge.type === "flow" && primaryFlowPairs.has(`${edge.source}->${edge.target}`));
+    const localBranchEdges = graph.edges.filter((edge) => edge.type === "single" || edge.type === "multi" || edge.type === "post");
+
+    for (const flowEdge of primaryFlowEdges) {
+      const flowSegment = projectedEdgeSegment(graph, flowEdge);
+      if (!flowSegment) continue;
+      for (const branchEdge of localBranchEdges) {
+        if (flowEdge.source === branchEdge.source || flowEdge.source === branchEdge.target || flowEdge.target === branchEdge.source || flowEdge.target === branchEdge.target) {
+          continue;
+        }
+        const branchSegment = projectedEdgeSegment(graph, branchEdge);
+        if (!branchSegment) continue;
+        expect(
+          segmentsIntersect(flowSegment, branchSegment),
+          `${flowEdge.source}->${flowEdge.target} crosses ${branchEdge.source}->${branchEdge.target}`
+        ).toBe(false);
+      }
+    }
+  });
+
   it("keeps root-level tool modules in separate vertical bands", () => {
     const plan = buildInstallationPlan(loadConfig(dotConfig));
     const graph = buildStudioGraph(plan);
@@ -240,35 +294,22 @@ describe("studio canvas", () => {
     }
   });
 
-  it("keeps the root tool-selection view compact until a module is focused", () => {
+  it("keeps large terminal option groups in wrapped local columns", () => {
     const plan = buildInstallationPlan(loadConfig(dotConfig));
-    const graph = buildStudioGraph(plan, { focusedNodeId: "__root" });
-    const nodeIds = new Set(graph.nodes.map((node) => node.id));
+    const graph = buildStudioGraph(plan);
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const recoveryChildren = structureEdgesFrom(plan, "zsh-recovery")
+      .filter((edge) => edge.type === "multi")
+      .map((edge) => nodesById.get(edge.to))
+      .filter((node): node is NonNullable<typeof node> => Boolean(node));
+    const hardeningChildren = structureEdgesFrom(plan, "ssh-hardening")
+      .filter((edge) => edge.type === "multi")
+      .map((edge) => nodesById.get(edge.to))
+      .filter((node): node is NonNullable<typeof node> => Boolean(node));
 
-    expect([...nodeIds]).toEqual(expect.arrayContaining(["__root", "tmux", "zsh", "ssh"]));
-    expect(nodeIds.has("tmux-install")).toBe(false);
-    expect(nodeIds.has("zsh-install")).toBe(false);
-    expect(nodeIds.has("ssh-install")).toBe(false);
-    expect(graph.compactNodeIds.has("tmux-install")).toBe(true);
-    expect(graph.compactNodeIds.has("zsh-install")).toBe(true);
-    expect(graph.compactNodeIds.has("ssh-install")).toBe(true);
-    expect(Object.keys(graph.primarySpines)).toHaveLength(0);
-    expectNoProjectedNodeOverlap(graph);
-  });
-
-  it("expands only the focused top-level module for tree navigation", () => {
-    const plan = buildInstallationPlan(loadConfig(dotConfig));
-    const graph = buildStudioGraph(plan, { focusedNodeId: "zsh-plugin-autosuggestions" });
-    const nodeIds = new Set(graph.nodes.map((node) => node.id));
-
-    expect(nodeIds.has("tmux")).toBe(true);
-    expect(nodeIds.has("zsh")).toBe(true);
-    expect(nodeIds.has("ssh")).toBe(true);
-    expect(nodeIds.has("tmux-install")).toBe(false);
-    expect(nodeIds.has("zsh-install")).toBe(true);
-    expect(nodeIds.has("zsh-plugin-autosuggestions")).toBe(true);
-    expect(nodeIds.has("ssh-install")).toBe(false);
-    expect(Object.keys(graph.primarySpines)).toEqual(["zsh"]);
+    expect(new Set(recoveryChildren.map((node) => node.position.x)).size).toBeGreaterThan(1);
+    expect(new Set(hardeningChildren.map((node) => node.position.x)).size).toBeGreaterThan(1);
+    expect(new Set(hardeningChildren.map((node) => node.position.y)).size).toBeLessThan(hardeningChildren.length);
     expectNoProjectedNodeOverlap(graph);
   });
 
