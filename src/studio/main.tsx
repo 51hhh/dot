@@ -56,6 +56,7 @@ const editableEdgeLabels: Record<EditableEdgeType, string> = {
 const MIN_CANVAS_ZOOM = 0.05;
 const MAX_CANVAS_ZOOM = 2;
 const CANVAS_FIT_VIEW_OPTIONS = { padding: 0.08, minZoom: MIN_CANVAS_ZOOM, maxZoom: 0.85 };
+const REACT_FLOW_EDGE_TYPE = "straight";
 
 function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
   const badge = badgeForNode(data);
@@ -431,7 +432,7 @@ function reactFlowEdge(edge: StudioProjectedEdge, draft = false): Edge {
     id: edge.id,
     source: edge.source,
     target: edge.target,
-    type: "default",
+    type: REACT_FLOW_EDGE_TYPE,
     animated: draft,
     label: draft ? `draft ${edge.type}` : undefined,
     className: `edge-${edge.type}${edge.nested ? " edge-nested" : ""}${draft ? " edge-draft" : ""}`,

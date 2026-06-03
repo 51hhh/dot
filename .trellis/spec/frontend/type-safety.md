@@ -149,9 +149,12 @@ export function buildStudioGraph(
 - Nested flows such as `tmux-plugins` are collapsed by default and expand only when their id is present in `expandedNodeIds`.
 - Expanded nested-flow nodes and their single/multi/post children render as real visible draggable nodes and edges.
 - Studio nodes must keep `targetPosition: Position.Left` and `sourcePosition: Position.Right`.
+- React Flow edges should use an explicit straight edge type for Plan Canvas semantic edges; avoid default Bezier routing because compact same-source branches form misleading arcs.
 - Studio projection renders the full visible graph by default; do not collapse top-level tools just because a node is selected.
 - Local single/multi/post branch columns must not visually intrude into the next primary flow column.
 - Large terminal option groups should wrap into local columns instead of forming one long vertical stack.
+- Post lane placement after wrapped local groups must use wrapped row count, not raw option count, so post edges do not become long vertical drops.
+- Primary flow spacing should remain compact enough for readable overview; root and flow structure edges should not create large horizontal spans.
 - Primary flow edges should not cross unrelated local branch edges in the projected full graph.
 - Root-level tool modules must occupy separate vertical bands when expanded; preventing node overlap alone is not enough.
 
@@ -166,8 +169,12 @@ export function buildStudioGraph(
 | Flow child has its own local flow | It is collapsed by default and represented by `data.nestedFlow` |
 | Flow child is expanded | Its local flow nodes render below/near the parent with `nested: true` edges |
 | Post children exist under a step | They appear as projected nodes and visible `post` edges, outside `primarySpines` |
+| Semantic edge is converted to React Flow | The rendered edge type is explicitly `straight`, not default Bezier |
 | Local branch node sits before the next flow step | Its right edge plus node gap is less than or equal to the next flow column x position |
 | Terminal option group has more than four choices | Choices wrap into multiple local columns |
+| Wrapped local group has post child | Post child sits near the wrapped rows instead of after every raw option slot |
+| Full real config graph is projected | Collapsed and expanded graph widths stay under explicit regression bounds |
+| Root or flow structure edge is projected | Horizontal edge span stays under the compact layout bound |
 | Primary flow edge and unrelated local branch edge are projected | Straight-line segment approximation reports no crossing |
 | Multiple top-level modules are expanded | The next module's top bound starts after the previous module's bottom bound plus gap |
 
@@ -191,8 +198,12 @@ export function buildStudioGraph(
 - Studio projection test: dependencies are hidden by default and toggled on explicitly.
 - Studio projection test: nested `tmux-plugins` flow is collapsed by default and expands locally.
 - Studio projection test: post nodes render visibly but stay out of the main spine.
+- Studio shell test: semantic edges use explicit straight React Flow edges, not the default Bezier type.
 - Studio projection test: branch columns stay clear of the next primary flow column.
 - Studio projection test: large terminal option groups wrap into multiple columns.
+- Studio projection test: post nodes stay near wrapped local lanes instead of using raw option count.
+- Studio projection test: collapsed and expanded real config widths stay bounded.
+- Studio projection test: root and flow structure edges stay horizontally compact.
 - Studio projection test: primary flow edges do not cross unrelated local branch edges.
 - Studio projection test: expanded top-level modules occupy separate vertical bands.
 - Build check: `npm run build` must still produce the Studio bundle.

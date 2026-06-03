@@ -11,6 +11,19 @@ const approxNodeWidth = 260;
 const approxNodeHeight = 132;
 const minNodeGap = 24;
 
+function graphBounds(graph: ReturnType<typeof buildStudioGraph>) {
+  const xs = graph.nodes.map((node) => node.position.x);
+  const ys = graph.nodes.map((node) => node.position.y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys),
+  };
+}
+
 function expectNoProjectedNodeOverlap(graph: ReturnType<typeof buildStudioGraph>) {
   for (let outer = 0; outer < graph.nodes.length; outer += 1) {
     for (let inner = outer + 1; inner < graph.nodes.length; inner += 1) {
@@ -106,6 +119,9 @@ describe("studio canvas", () => {
     expect(source).toContain("fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}");
     expect(source).toContain("minZoom={MIN_CANVAS_ZOOM}");
     expect(source).toContain("maxZoom={MAX_CANVAS_ZOOM}");
+    expect(source).toContain('REACT_FLOW_EDGE_TYPE = "straight"');
+    expect(source).toContain("type: REACT_FLOW_EDGE_TYPE");
+    expect(source).not.toContain('type: "default"');
     expect(source).toContain("nested-flow-summary");
     expect(source).toContain('data-action="toggle-dependencies"');
     expect(source).toContain('aria-label="Plan diagnostics"');
@@ -248,6 +264,43 @@ describe("studio canvas", () => {
         }
       }
     }
+  });
+
+  it("keeps the full projected graph compact enough for readable overview", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const collapsed = buildStudioGraph(plan);
+    const expanded = buildStudioGraph(plan, { expandedNodeIds: new Set(["tmux-plugins"]) });
+
+    expect(graphBounds(collapsed).width).toBeLessThanOrEqual(7600);
+    expect(graphBounds(expanded).width).toBeLessThanOrEqual(9400);
+  });
+
+  it("keeps root and flow structure edges horizontally compact", () => {
+    const graph = buildStudioGraph(buildInstallationPlan(loadConfig(dotConfig)), {
+      expandedNodeIds: new Set(["tmux-plugins"]),
+    });
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const structureEdges = graph.edges.filter((edge) => edge.type === "single" || edge.type === "flow");
+
+    for (const edge of structureEdges) {
+      const source = nodesById.get(edge.source);
+      const target = nodesById.get(edge.target);
+      expect(source, `missing edge source ${edge.source}`).toBeDefined();
+      expect(target, `missing edge target ${edge.target}`).toBeDefined();
+      expect(
+        Math.abs(target!.position.x - source!.position.x),
+        `${edge.source}->${edge.target} should not create a long horizontal span`
+      ).toBeLessThanOrEqual(780);
+    }
+  });
+
+  it("keeps post nodes near wrapped local lanes instead of total option count", () => {
+    const graph = buildStudioGraph(buildInstallationPlan(loadConfig(dotConfig)));
+    const recovery = graph.nodes.find((node) => node.id === "zsh-recovery")!;
+    const finalNotes = graph.nodes.find((node) => node.id === "zsh-recovery-final-notes")!;
+
+    expect(finalNotes.position.y).toBeGreaterThan(recovery.position.y);
+    expect(finalNotes.position.y - recovery.position.y).toBeLessThanOrEqual(1050);
   });
 
   it("keeps primary flow edges clear of unrelated local branch edges", () => {
