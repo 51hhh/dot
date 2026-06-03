@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Plan Canvas component contract, including React Flow canvas overview and visual affordance expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Studio projection and graph layout contracts for fully expanded Plan Canvas behavior."}

@@ -100,6 +100,12 @@ describe("studio canvas", () => {
     expect(source).toContain("flow = linear chain");
     expect(source).toContain("sourcePosition: Position.Right");
     expect(source).toContain("targetPosition: Position.Left");
+    expect(source).toContain("MIN_CANVAS_ZOOM = 0.05");
+    expect(source).toContain("MAX_CANVAS_ZOOM = 2");
+    expect(source).toContain("CANVAS_FIT_VIEW_OPTIONS");
+    expect(source).toContain("fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}");
+    expect(source).toContain("minZoom={MIN_CANVAS_ZOOM}");
+    expect(source).toContain("maxZoom={MAX_CANVAS_ZOOM}");
     expect(source).toContain("nested-flow-summary");
     expect(source).toContain('data-action="toggle-dependencies"');
     expect(source).toContain('aria-label="Plan diagnostics"');

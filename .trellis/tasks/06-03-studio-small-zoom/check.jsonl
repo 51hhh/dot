@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify Plan Canvas zoom behavior remains aligned with component-level overview guidance."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify Studio graph behavior remains consistent with projection and layout contracts."}

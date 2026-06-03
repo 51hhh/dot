@@ -41,6 +41,7 @@ The developer-side Studio renders `InstallationPlan` as a left-to-right graph:
 - `post` edges are visually distinct from normal structure and execution remains post-ordered.
 - Keep a compact legend in the toolbar or canvas area; do not reintroduce a right inspector for basic edge meaning.
 - Keep Plan Canvas cards at 8px radius unless a shared design system changes that rule.
+- Fully expanded Plan Canvas graphs must support low-zoom overview; keep React Flow `minZoom` at or below `0.05` unless another whole-graph overview exists.
 
 Edge colors are part of the visual contract:
 

@@ -1,0 +1,30 @@
+{
+  "id": "studio-small-zoom",
+  "name": "studio-small-zoom",
+  "title": "fix: 支持 Studio 更小缩放倍率",
+  "description": "Allow Plan Canvas to zoom out further so fully expanded graphs can be inspected more intuitively.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zwx19990307",
+  "assignee": "zwx19990307",
+  "createdAt": "2026-06-03",
+  "completedAt": "2026-06-03",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/studio/main.tsx",
+    "tests/studio.test.ts",
+    ".trellis/spec/frontend/component-guidelines.md"
+  ],
+  "notes": "React Flow minZoom lowered to 0.05 and fitView options adjusted for full-graph overview.",
+  "meta": {}
+}

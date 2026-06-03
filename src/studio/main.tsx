@@ -53,6 +53,9 @@ const editableEdgeLabels: Record<EditableEdgeType, string> = {
   dependency: "依赖",
   post: "后置",
 };
+const MIN_CANVAS_ZOOM = 0.05;
+const MAX_CANVAS_ZOOM = 2;
+const CANVAS_FIT_VIEW_OPTIONS = { padding: 0.08, minZoom: MIN_CANVAS_ZOOM, maxZoom: 0.85 };
 
 function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
   const badge = badgeForNode(data);
@@ -369,6 +372,9 @@ function App() {
           nodesConnectable
           deleteKeyCode={["Backspace", "Delete"]}
           fitView
+          fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}
+          minZoom={MIN_CANVAS_ZOOM}
+          maxZoom={MAX_CANVAS_ZOOM}
           colorMode="dark"
         >
           <Background color="#334155" gap={28} />
