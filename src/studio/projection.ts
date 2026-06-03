@@ -44,15 +44,17 @@ export interface StudioGraph {
 export interface StudioGraphOptions {
   showDependencies?: boolean;
   expandedNodeIds?: ReadonlySet<string>;
+  focusedNodeId?: string;
 }
 
 type IndexedEdge = PlanEdge & { index: number };
 type StructureEdge = IndexedEdge & { type: PlanStructureEdgeType };
 type BranchEdge = StructureEdge & { type: "single" | "multi" | "post" };
 
-const SPINE_SPACING = 360;
+const SPINE_SPACING = 620;
 const MODULE_START_Y = 560;
 const MODULE_GAP = 760;
+const COLLAPSED_MODULE_GAP = 220;
 const LOCAL_LANE_X_OFFSET = 300;
 const SINGLE_LANE_Y_OFFSET = -180;
 const MULTI_LANE_Y_OFFSET = 190;
@@ -87,6 +89,7 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   const topLevelNodeIds = new Set(
     structureEdgesFrom(plan.root).filter((edge) => edge.type !== "post").map((edge) => edge.to)
   );
+  const focusedTopLevelNodeIds = focusedTopLevelNodeIdsFor(options.focusedNodeId);
   const visibleNodeIds = new Set<string>();
   const compactNodeIds = new Set<string>();
   const ownerByNodeId = new Map<string, string>();
@@ -149,6 +152,35 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     return isCollapsibleFlow(id) && expandedNodeIds.has(id);
   }
 
+  function focusedTopLevelNodeIdsFor(focusedNodeId: string | undefined): Set<string> | null {
+    if (!focusedNodeId) return null;
+    if (focusedNodeId === plan.root) return new Set();
+    if (topLevelNodeIds.has(focusedNodeId)) return new Set([focusedNodeId]);
+
+    for (const topLevelId of topLevelNodeIds) {
+      if (hasStructuralDescendant(topLevelId, focusedNodeId)) {
+        return new Set([topLevelId]);
+      }
+    }
+
+    return new Set();
+  }
+
+  function hasStructuralDescendant(rootId: string, targetId: string): boolean {
+    const seen = new Set<string>();
+    const stack = [rootId];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (id === targetId) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      for (const edge of structureEdgesFrom(id)) {
+        stack.push(edge.to);
+      }
+    }
+    return false;
+  }
+
   function addVisibleNode(id: string, position: StudioLayoutPoint): void {
     if (!plan.nodes[id]) return;
     visibleNodeIds.add(id);
@@ -156,6 +188,26 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     ownerByNodeId.set(id, id);
     if (!positions.has(id)) {
       positions.set(id, plan.nodes[id].position ?? position);
+    }
+  }
+
+  function boundsForNodeIds(ids: string[]): { top: number; bottom: number } | null {
+    const points = ids
+      .map((id) => positions.get(id))
+      .filter((position): position is StudioLayoutPoint => Boolean(position));
+    if (points.length === 0) return null;
+    return {
+      top: Math.min(...points.map((position) => position.y)),
+      bottom: Math.max(...points.map((position) => position.y + NODE_HEIGHT)),
+    };
+  }
+
+  function translateNodeIds(ids: string[], deltaY: number): void {
+    if (deltaY === 0) return;
+    for (const id of ids) {
+      const position = positions.get(id);
+      if (!position) continue;
+      positions.set(id, { x: position.x, y: position.y + deltaY });
     }
   }
 
@@ -263,23 +315,39 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   addVisibleNode(plan.root, { x: 0, y: MODULE_START_Y });
   const rootChildPositions: StudioLayoutPoint[] = [];
   let nextModuleY = MODULE_START_Y;
+  let nextModuleMinY = Number.NEGATIVE_INFINITY;
   rootEdges.forEach((edge) => {
     const moduleStartIds = new Set(visibleNodeIds);
     const y = nextModuleY;
-    rootChildPositions.push({ x: SPINE_SPACING, y });
+    const shouldExpandModule = focusedTopLevelNodeIds === null || focusedTopLevelNodeIds.has(edge.to);
     addVisibleNode(edge.to, { x: SPINE_SPACING, y });
     addProjectedEdge(edge);
-    layoutVisibleNodeChildren(edge.to, false);
-    if (plan.nodes[edge.to]?.mode === "flow") {
+    if (shouldExpandModule) {
+      layoutVisibleNodeChildren(edge.to, false);
+    } else {
+      for (const childEdge of structureEdgesFrom(edge.to)) {
+        markCollapsedSubtree(childEdge.to, edge.to);
+      }
+    }
+    if (shouldExpandModule && plan.nodes[edge.to]?.mode === "flow") {
       primarySpines[edge.to] = collectFlowSpineIds(edge.to);
       layoutFlowChildren(edge.to, SPINE_SPACING, y, false);
     }
 
-    const moduleYValues = [...visibleNodeIds]
-      .filter((id) => !moduleStartIds.has(id))
-      .map((id) => positions.get(id)?.y)
-      .filter((value): value is number => value !== undefined);
-    nextModuleY = Math.max(y, ...moduleYValues) + MODULE_GAP;
+    const moduleIds = [...visibleNodeIds].filter((id) => !moduleStartIds.has(id));
+    const moduleBounds = boundsForNodeIds(moduleIds);
+    const moduleHasSavedPositions = moduleIds.some((id) => Boolean(plan.nodes[id]?.position));
+    if (moduleBounds && !moduleHasSavedPositions && moduleBounds.top < nextModuleMinY) {
+      translateNodeIds(moduleIds, nextModuleMinY - moduleBounds.top);
+    }
+
+    const shiftedBounds = boundsForNodeIds(moduleIds);
+    const rootChildPosition = positions.get(edge.to);
+    if (rootChildPosition) rootChildPositions.push(rootChildPosition);
+    if (shiftedBounds) {
+      nextModuleMinY = shiftedBounds.bottom + (shouldExpandModule ? MODULE_GAP : COLLAPSED_MODULE_GAP);
+      nextModuleY = nextModuleMinY;
+    }
   });
 
   if (rootEdges.length > 0 && !plan.nodes[plan.root]?.position) {
