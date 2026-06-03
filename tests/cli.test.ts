@@ -537,7 +537,7 @@ describe("CLI build dot config", () => {
     expect(exitCode).toBe(0);
     const script = fs.readFileSync(output, "utf-8");
     expect(script).toContain("DOT_TITLE='dot 安装器'");
-    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh zsh-recovery ssh'");
+    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh ssh'");
     expect(script).toContain("DOT_MODES['__root']='single'");
     expect(script).toContain("DOT_MODES['tmux']='flow'");
     expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-status tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
@@ -624,7 +624,7 @@ describe("CLI build dot config", () => {
     expect(script).not.toContain("DOT_CHILDREN['__root']='tmux-install");
     expect(script).toContain("DOT_MODES['zsh']='flow'");
     expect(script).toContain("DOT_MODES['zsh-plugins']='multi'");
-    expect(script).toContain("DOT_CHILDREN['zsh']='zsh-diagnose zsh-install zsh-oh-my-zsh zsh-powerlevel10k zsh-plugins zsh-zshrc zsh-default-shell zsh-final-notes'");
+    expect(script).toContain("DOT_CHILDREN['zsh']='zsh-diagnose zsh-install zsh-recovery zsh-oh-my-zsh zsh-powerlevel10k zsh-plugins zsh-zshrc zsh-default-shell zsh-final-notes'");
     expect(script).toContain("DOT_CHILDREN['zsh-install']='zsh-install-apt zsh-install-skip'");
     expect(script).toContain("DOT_CHILDREN['zsh-oh-my-zsh']='zsh-oh-my-zsh-install zsh-oh-my-zsh-skip'");
     expect(script).toContain("DOT_CHILDREN['zsh-powerlevel10k']='zsh-powerlevel10k-github zsh-powerlevel10k-gitee zsh-powerlevel10k-skip'");
@@ -673,7 +673,7 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_EXPLICIT_MODES['zsh-oh-my-zsh']='single'");
     expect(script).toContain("dot_has_ambiguous_single_choice()");
     expect(script).toContain("single-choice group");
-    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh zsh-recovery ssh'");
+    expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh ssh'");
     expect(script).toContain("DOT_CHILDREN['ssh-install']='ssh-install-apt ssh-install-skip'");
     expect(script).toContain("DOT_CHILDREN['ssh-hostkey']='ssh-hostkey-regen ssh-hostkey-keep'");
     expect(script).toContain("DOT_CHILDREN['ssh-keygen']='ssh-keygen-ed25519 ssh-keygen-rsa ssh-keygen-skip'");

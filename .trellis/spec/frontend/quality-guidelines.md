@@ -69,8 +69,8 @@ DOT_CONFIRM_ZSH_APT_REMOVE=1
 
 ### 3. Contracts
 
-- Noninteractive branch selection expands branch ids to all runnable leaves under that branch.
-- Destructive recovery/uninstall leaves must not be children of broad install/configuration branches such as `zsh`; put them in a separate top-level recovery/maintenance branch.
+- Noninteractive branch selection must not expand branches that contain explicit multi-option `single` groups; users must select concrete option ids under those groups.
+- Destructive recovery/uninstall leaves may live inside the same tool project flow, but only under a clearly labeled recovery/maintenance step such as `zsh-recovery`; do not place destructive leaves directly under install/configuration steps.
 - Destructive package removal must require an additional confirmation beyond menu selection.
 - Interactive generated scripts may ask for a typed confirmation token before proceeding.
 - Noninteractive `--run-plan` must require an explicit environment confirmation key for dangerous package removal.
@@ -81,7 +81,7 @@ DOT_CONFIRM_ZSH_APT_REMOVE=1
 
 | Condition | Expected behavior |
 |-----------|-------------------|
-| `--dry-run-plan --select zsh` | Shows install/config leaves only, not uninstall/package-removal leaves |
+| `--dry-run-plan --select zsh` | Exits non-zero before planning because the branch contains explicit single-choice groups |
 | `--dry-run-plan --select zsh-recovery` | Shows recovery/uninstall leaves and a recovery-specific post note |
 | `--run-plan --select <dangerous-package-remove>` without TTY or env confirmation | Exits non-zero before running package manager removal |
 | Interactive dangerous package removal without typed token | Skips the destructive action and reports a warning |
@@ -90,18 +90,18 @@ DOT_CONFIRM_ZSH_APT_REMOVE=1
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `zsh-recovery` is a separate top-level branch containing `zsh-chsh-reset-bash`, plugin/theme backup moves, Oh My Zsh backup move, and guarded apt removal.
+- Good: `zsh-recovery` is a clearly labeled step inside the `zsh` flow, after `zsh-install`, containing `zsh-chsh-reset-bash`, plugin/theme backup moves, Oh My Zsh backup move, and guarded apt removal.
 - Good: `zsh-uninstall-apt-remove` refuses noninteractive execution unless `DOT_CONFIRM_ZSH_APT_REMOVE=1` is set.
-- Base: selecting a normal install flow can still include multiple single-branch leaves in dry-run output because branch expansion is broad by design.
-- Bad: adding `apt remove zsh` under `zsh` means `--run-plan --select zsh` can remove the shell during an install smoke test.
+- Base: selecting concrete leaves such as `zsh-install-apt zsh-oh-my-zsh-install` remains valid and avoids ambiguous single-choice expansion.
+- Bad: adding `apt remove zsh` directly under `zsh-install` or another install/configuration step.
 - Bad: deleting `~/.oh-my-zsh` with `rm -rf` without backup.
 
 ### 6. Tests Required
 
-- CLI test: root metadata includes separate install and recovery branches when destructive recovery actions are added.
-- CLI test: normal install branch children do not include uninstall/package-removal ids.
+- CLI test: Zsh metadata keeps recovery/uninstall leaves under `zsh-recovery`, not directly under `zsh-install`.
+- CLI/generated script test: `--dry-run-plan --select zsh` fails before plan output, while `--dry-run-plan --select zsh-recovery` remains available for the recovery step.
 - CLI test: generated script contains the explicit environment confirmation key for dangerous package removal.
-- Planner test: recovery branch edges are separate from install flow edges and recovery final notes are post steps.
+- Planner test: `zsh-install -> zsh-recovery` is a `flow` edge and recovery final notes remain post steps under `zsh-recovery`.
 - Generated script check: rebuild `dist/dot.sh`, run `bash -n`, and run dry-run plan checks for both install and recovery branches.
 
 ### 7. Wrong vs Correct
@@ -113,8 +113,10 @@ DOT_CONFIRM_ZSH_APT_REMOVE=1
   mode: "flow"
   children:
     - id: "zsh-install"
-    - id: "zsh-uninstall-apt-remove"
-      script: "../templates/zsh/uninstall-apt-remove.sh"
+      children:
+        - id: "zsh-install-apt"
+        - id: "zsh-uninstall-apt-remove"
+          script: "../templates/zsh/uninstall-apt-remove.sh"
 ```
 
 #### Correct
@@ -124,12 +126,11 @@ DOT_CONFIRM_ZSH_APT_REMOVE=1
   mode: "flow"
   children:
     - id: "zsh-install"
+    - id: "zsh-recovery"
+      mode: "multi"
+      children:
+        - id: "zsh-chsh-reset-bash"
+        - id: "zsh-uninstall-apt-remove"
     - id: "zsh-final-notes"
       post: true
-
-- id: "zsh-recovery"
-  mode: "multi"
-  children:
-    - id: "zsh-chsh-reset-bash"
-    - id: "zsh-uninstall-apt-remove"
 ```
