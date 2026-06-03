@@ -50,16 +50,16 @@ type IndexedEdge = PlanEdge & { index: number };
 type StructureEdge = IndexedEdge & { type: PlanStructureEdgeType };
 type BranchEdge = StructureEdge & { type: "single" | "multi" | "post" };
 
-const SPINE_SPACING = 1060;
+const SPINE_SPACING = 780;
 const MODULE_START_Y = 560;
-const MODULE_GAP = 760;
-const LOCAL_LANE_X_OFFSET = 300;
-const LOCAL_LANE_COLUMN_SPACING = 360;
-const SINGLE_LANE_Y_OFFSET = -180;
-const MULTI_LANE_Y_OFFSET = 190;
-const POST_LANE_Y_OFFSET = 520;
-const LOCAL_NODE_SPACING = 190;
-const NESTED_FLOW_OFFSET = 1700;
+const MODULE_GAP = 260;
+const LOCAL_LANE_X_OFFSET = 200;
+const LOCAL_LANE_COLUMN_SPACING = 290;
+const SINGLE_LANE_Y_OFFSET = -170;
+const MULTI_LANE_Y_OFFSET = 170;
+const POST_LANE_Y_OFFSET = 420;
+const LOCAL_NODE_SPACING = 165;
+const NESTED_FLOW_OFFSET = 980;
 const NODE_WIDTH = 260;
 const NODE_HEIGHT = 132;
 const NODE_GAP = 24;
@@ -208,10 +208,14 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     const singleEdges = edgesOfType(parentId, "single");
     const multiEdges = edgesOfType(parentId, "multi");
     const postEdges = edgesOfType(parentId, "post");
+    const multiRows = localLaneRowCount(multiEdges);
+    const postLaneYOffset = multiRows > 0
+      ? MULTI_LANE_Y_OFFSET + (multiRows + 1) * LOCAL_NODE_SPACING
+      : POST_LANE_Y_OFFSET;
 
     layoutLocalLane(parentId, singleEdges, parentPosition, SINGLE_LANE_Y_OFFSET - Math.max(0, singleEdges.length - 1) * LOCAL_NODE_SPACING, nested);
     layoutLocalLane(parentId, multiEdges, parentPosition, MULTI_LANE_Y_OFFSET, nested);
-    layoutLocalLane(parentId, postEdges, parentPosition, POST_LANE_Y_OFFSET + multiEdges.length * LOCAL_NODE_SPACING, nested);
+    layoutLocalLane(parentId, postEdges, parentPosition, postLaneYOffset, nested);
   }
 
   function layoutLocalLane(parentId: string, edges: BranchEdge[], parentPosition: StudioLayoutPoint, yOffset: number, nested: boolean): void {
@@ -250,9 +254,14 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     if (edges.length <= 4) return 1;
     const terminalEdges = edges.filter((edge) => structureEdgesFrom(edge.to).length === 0);
     if (terminalEdges.length === edges.length) {
-      return Math.min(3, Math.ceil(edges.length / 4));
+      return Math.min(2, Math.ceil(edges.length / 4));
     }
     return 2;
+  }
+
+  function localLaneRowCount(edges: BranchEdge[]): number {
+    if (edges.length === 0) return 0;
+    return Math.ceil(edges.length / localLaneColumnCount(edges));
   }
 
   function layoutVisibleNodeChildren(id: string, nested: boolean): void {

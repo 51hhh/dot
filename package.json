@@ -10,7 +10,7 @@
     "dist/"
   ],
   "scripts": {
-    "build": "tsup && vite build --config vite.studio.config.ts",
+    "build": "tsup && vite build --config vite.studio.config.ts && node dist/index.js build -c configs/dot.yaml",
     "dev": "tsup --watch",
     "start": "node dist/index.js",
     "test": "vitest run",
