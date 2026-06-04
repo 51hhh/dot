@@ -23,17 +23,30 @@ if [[ ! -s "$AUTHORIZED_KEYS" ]]; then
 fi
 
 if [[ "${DOT_CONFIRM_SSH_DISABLE_PASSWORD:-}" != "1" ]]; then
-  if [[ -t 0 ]]; then
-    log_warn "即将禁止 SSH 密码登录。请确认 $SSH_TARGET_USER 已可用密钥登录。"
-    printf '请输入 DISABLE_PASSWORD 继续: '
-    read -r confirm_disable_password
-    if [[ "$confirm_disable_password" != "DISABLE_PASSWORD" ]]; then
-      log_warn "未确认禁止密码登录，已跳过。"
-      return 0
+  log_warn "即将禁止 SSH 密码登录。请确认 $SSH_TARGET_USER 已可用密钥登录。"
+  printf '请输入 DISABLE_PASSWORD 继续: '
+  if declare -F dot_read_line >/dev/null 2>&1; then
+    if ! dot_read_line confirm_disable_password; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_DISABLE_PASSWORD=1。"
+      return 1
+    fi
+  elif [[ -r /dev/tty ]]; then
+    if ! IFS= read -r confirm_disable_password < /dev/tty; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_DISABLE_PASSWORD=1。"
+      return 1
+    fi
+  elif [[ -t 0 ]]; then
+    if ! IFS= read -r confirm_disable_password; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_DISABLE_PASSWORD=1。"
+      return 1
     fi
   else
     log_error "非交互执行禁止密码登录需要设置 DOT_CONFIRM_SSH_DISABLE_PASSWORD=1。"
     return 1
+  fi
+  if [[ "$confirm_disable_password" != "DISABLE_PASSWORD" ]]; then
+    log_warn "未确认禁止密码登录，已跳过。"
+    return 0
   fi
 fi
 

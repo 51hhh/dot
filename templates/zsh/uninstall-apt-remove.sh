@@ -31,16 +31,29 @@ fi
 
 log_warn "即将执行 apt-get remove -y zsh；这不会删除 ~/.zshrc 或 Oh My Zsh 目录。"
 if [[ "${DOT_CONFIRM_ZSH_APT_REMOVE:-}" != "1" ]]; then
-  if [[ -t 0 ]]; then
-    printf '确认移除 zsh 软件包？请输入 REMOVE_ZSH 继续: '
-    read -r confirm_remove_zsh
-    if [[ "$confirm_remove_zsh" != "REMOVE_ZSH" ]]; then
-      log_warn "未确认移除 zsh，已跳过 apt remove。"
-      return 0
+  printf '确认移除 zsh 软件包？请输入 REMOVE_ZSH 继续: '
+  if declare -F dot_read_line >/dev/null 2>&1; then
+    if ! dot_read_line confirm_remove_zsh; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_ZSH_APT_REMOVE=1。"
+      return 1
+    fi
+  elif [[ -r /dev/tty ]]; then
+    if ! IFS= read -r confirm_remove_zsh < /dev/tty; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_ZSH_APT_REMOVE=1。"
+      return 1
+    fi
+  elif [[ -t 0 ]]; then
+    if ! IFS= read -r confirm_remove_zsh; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_ZSH_APT_REMOVE=1。"
+      return 1
     fi
   else
     log_error "非交互执行移除 zsh 需要设置 DOT_CONFIRM_ZSH_APT_REMOVE=1。"
     return 1
+  fi
+  if [[ "$confirm_remove_zsh" != "REMOVE_ZSH" ]]; then
+    log_warn "未确认移除 zsh，已跳过 apt remove。"
+    return 0
   fi
 fi
 

@@ -694,6 +694,9 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_PROMPT_VARS['ssh-authkeys-file']='pubkey_path'");
     expect(script).toContain("DOT_PROMPT_TYPES['ssh-authkeys-github']='text'");
     expect(script).toContain("DOT_PROMPT_VARS['ssh-authkeys-github']='github_user'");
+    expect(script).toContain("USERS=\"$(dot_get_var_or_default 'allowed_users' '')\"");
+    expect(script).toContain("PUBKEY_PATH=\"$(dot_get_var_or_default 'pubkey_path' '')\"");
+    expect(script).toContain("GITHUB_USER=\"$(dot_get_var_or_default 'github_user' '')\"");
 
     // SSH template content present in generated script
     expect(script).toContain("openssh-server");
