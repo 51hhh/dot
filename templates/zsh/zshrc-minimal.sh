@@ -36,6 +36,6 @@ fi
 dot_zshrc_backup_minimal || return 1
 dot_zshrc_append_if_missing '^[[:space:]]*export[[:space:]]+ZSH=' 'export ZSH="$HOME/.oh-my-zsh"' || return 1
 dot_zshrc_append_if_missing '^[[:space:]]*plugins=' 'plugins=(git)' || return 1
-dot_zshrc_append_if_missing '^[[:space:]]*source[[:space:]]+.*oh-my-zsh\.sh' 'source "$ZSH/oh-my-zsh.sh"' || return 1
+dot_zshrc_append_if_missing '^[[:space:]]*source[[:space:]]+.*oh-my-zsh\.sh' '[[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"' || return 1
 
 log_ok "最小 ~/.zshrc 已写入。"

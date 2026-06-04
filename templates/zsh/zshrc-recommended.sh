@@ -110,7 +110,7 @@ fi
 dot_zshrc_set_or_insert '^[[:space:]]*plugins=' "$ZSH_PLUGINS_LINE" "$ZSHRC" || return 1
 
 if ! grep -Eq '^[[:space:]]*source[[:space:]]+.*oh-my-zsh\.sh' "$ZSHRC"; then
-  if ! printf '%s\n' 'source "$ZSH/oh-my-zsh.sh"' >> "$ZSHRC"; then
+  if ! printf '%s\n' '[[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"' >> "$ZSHRC"; then
     log_error "追加 Oh My Zsh source 行失败。"
     return 1
   fi
