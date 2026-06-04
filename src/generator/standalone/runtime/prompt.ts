@@ -196,7 +196,7 @@ dot_text_input_prompt() {
   printf '%s\n' "────────────────────────────────────────"
   printf "请输入内容（直接回车使用默认值，输入 b 返回）：\n"
   printf "> "
-  read -r value
+  dot_read_line value || return 1
   if [[ "$value" == "b" || "$value" == "B" ]]; then
     return 2
   fi
@@ -217,7 +217,7 @@ dot_number_input_prompt() {
     printf '%s\n' "────────────────────────────────────────"
     printf "请输入数字（直接回车使用默认值，输入 b 返回）：\n"
     printf "> "
-    read -r value
+    dot_read_line value || return 1
     if [[ "$value" == "b" || "$value" == "B" ]]; then
       return 2
     fi

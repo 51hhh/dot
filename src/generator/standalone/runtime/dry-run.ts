@@ -57,7 +57,7 @@ dot_confirm_plan() {
   dot_show_plan
   local answer
   printf "Execute this plan? [y/N] "
-  read -r answer
+  dot_read_line answer || return 1
   [[ "$answer" =~ ^[Yy]$ ]]
 }`;
 }

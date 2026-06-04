@@ -39,7 +39,7 @@ ${command}`,
     {
       cwd: dir,
       encoding: "utf-8",
-      env: { ...process.env, GENERATED_DOT_SCRIPT: scriptPath },
+      env: { ...process.env, GENERATED_DOT_SCRIPT: scriptPath, DOT_INPUT_FD: "0" },
       input,
       timeout: 5000,
     }
@@ -680,6 +680,82 @@ describe("assembleStandalone", () => {
 
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("status=0 selected=1 var=C-a");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads text prompts through the configured runtime input fd", () => {
+    const dir = tmpDir();
+
+    try {
+      const scriptPath = writeTmpFile(dir, "name.sh", 'USER_NAME="{{user_name:default}}"\nprintf "name=%s\\n" "$USER_NAME"');
+      const config: Config = {
+        name: "dot",
+        version: "1.0",
+        output: { filename: "dot.sh", dir },
+        menu: [{
+          id: "name",
+          label: "Name",
+          script: scriptPath,
+          prompt: { type: "text", var: "user_name", label: "Name" },
+        }],
+      };
+
+      const generated = assembleStandalone({ config, configPath: path.join(dir, "config.yaml") });
+      expect(generated).toContain("DOT_INPUT_SRC=\"fd:${DOT_INPUT_FD}\"");
+      expect(generated).toContain("dot_read_line()");
+      expect(generated).toContain("dot_read_line value || return 1");
+
+      const result = runGeneratedBash(
+        dir,
+        generated,
+        'dot_text_input_prompt name; status=$?; printf "status=%s var=%s\\n" "$status" "${DOT_VARS[user_name]:-}"',
+        "alice\n"
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("status=0 var=alice");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("writes guarded Oh My Zsh source lines in zshrc snippets", () => {
+    const configPath = path.resolve(import.meta.dirname, "../configs/dot.yaml");
+    const config = loadConfig(configPath);
+    const dir = tmpDir();
+    const home = path.join(dir, "home");
+
+    try {
+      fs.mkdirSync(home, { recursive: true });
+      const generated = assembleStandalone({ config, configPath });
+      const scriptPath = path.join(dir, "generated.sh");
+      fs.writeFileSync(scriptPath, withoutEntrypoint(generated));
+
+      const minimalFunc = bashFunctionNameForId("zsh-zshrc-minimal");
+      const result = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "$GENERATED_DOT_SCRIPT"
+trap - EXIT INT TERM
+${minimalFunc}; printf "status=%s\\n" "$?"`,
+        ],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+          env: { ...process.env, GENERATED_DOT_SCRIPT: scriptPath, HOME: home, DOT_INPUT_FD: "0" },
+          timeout: 5000,
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("status=0");
+
+      const zshrc = fs.readFileSync(path.join(home, ".zshrc"), "utf-8");
+      expect(zshrc).toContain('[[ -f "$ZSH/oh-my-zsh.sh" ]] && source "$ZSH/oh-my-zsh.sh"');
+      expect(zshrc).not.toContain('\nsource "$ZSH/oh-my-zsh.sh"\n');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
