@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import type { Config, MenuItem } from "../../loader/schema.js";
 import type { InstallationPlan } from "../../planner/types.js";
-import { loadTemplate, resolveTemplatePath } from "../template.js";
+import { resolveTemplatePath } from "../template.js";
 import { bashQuote } from "./ids.js";
 import { planNodeFor } from "./nodes.js";
 
@@ -32,12 +32,8 @@ export function renderSnippetFunctions({
     const scriptPath = resolveTemplatePath(buildNode.script, configDir);
     const mergedVars = { ...config.vars, ...node.vars };
     const rawScriptContent = fs.readFileSync(scriptPath, "utf-8");
-    let scriptContent = loadTemplate(scriptPath, mergedVars, unresolved).trimEnd();
-    for (const prompt of collectPrompts(node)) {
-      for (const fallback of promptFallbacks(rawScriptContent, prompt.var, mergedVars)) {
-        scriptContent = replaceRenderedPromptValue(scriptContent, prompt.var, fallback);
-      }
-    }
+    const promptVars = new Set(collectPrompts(node).map((prompt) => prompt.var));
+    const scriptContent = renderStandaloneSnippetTemplate(rawScriptContent, mergedVars, promptVars, unresolved).trimEnd();
 
     sections.push(`# ─── ${buildNode.label} (${id}) ───`);
     sections.push(`${func}() {`);
@@ -62,29 +58,20 @@ function collectPrompts(node: MenuItem): Array<{ var: string }> {
   return prompts;
 }
 
-function replaceRenderedPromptValue(content: string, varName: string, fallback: string): string {
-  if (!fallback) return content;
-  const escaped = fallback.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return content.replace(new RegExp(escaped, "g"), `$(dot_get_var_or_default ${bashQuote(varName)} ${bashQuote(fallback)})`);
-}
-
-function promptFallbacks(
-  rawContent: string,
-  varName: string,
-  mergedVars: Record<string, string>
-): string[] {
-  const fallbacks = new Set<string>();
-  const configuredValue = mergedVars[varName];
-  if (configuredValue) fallbacks.add(configuredValue);
-
-  const pattern = /\{\{(\w+)(?::([^}]*))?\}\}/g;
-  let match: RegExpExecArray | null;
-  while ((match = pattern.exec(rawContent)) !== null) {
-    const [, key, defaultValue] = match;
-    if (key === varName && defaultValue) {
-      fallbacks.add(defaultValue);
+function renderStandaloneSnippetTemplate(
+  content: string,
+  vars: Record<string, string>,
+  promptVars: ReadonlySet<string>,
+  unresolved: Set<string>
+): string {
+  return content.replace(/\{\{(\w+)(?::([^}]*))?\}\}/g, (_match, key: string, defaultValue: string | undefined) => {
+    if (promptVars.has(key)) {
+      const fallback = key in vars ? vars[key] : defaultValue ?? "";
+      return `$(dot_get_var_or_default ${bashQuote(key)} ${bashQuote(fallback)})`;
     }
-  }
-
-  return [...fallbacks];
+    if (key in vars) return vars[key];
+    if (defaultValue !== undefined) return defaultValue;
+    unresolved.add(key);
+    return `{{${key}}}`;
+  });
 }

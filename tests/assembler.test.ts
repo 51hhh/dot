@@ -761,6 +761,134 @@ ${minimalFunc}; printf "status=%s\\n" "$?"`,
     }
   });
 
+  it("reads zsh apt removal confirmation through the configured runtime input fd", () => {
+    const configPath = path.resolve(import.meta.dirname, "../configs/dot.yaml");
+    const config = loadConfig(configPath);
+    const dir = tmpDir();
+    const binDir = path.join(dir, "bin");
+    const aptLog = path.join(dir, "apt.log");
+
+    try {
+      fs.mkdirSync(binDir, { recursive: true });
+      fs.writeFileSync(path.join(binDir, "apt-get"), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${aptLog}"\n`);
+      fs.chmodSync(path.join(binDir, "apt-get"), 0o755);
+
+      const generated = assembleStandalone({ config, configPath });
+      fs.writeFileSync(path.join(dir, "generated.sh"), withoutEntrypoint(generated));
+      const uninstallFunc = bashFunctionNameForId("zsh-uninstall-apt-remove");
+      const result = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "$GENERATED_DOT_SCRIPT"
+trap - EXIT INT TERM
+dot_sudo() { "$@"; }
+${uninstallFunc}; printf "status=%s\\n" "$?"`,
+        ],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            GENERATED_DOT_SCRIPT: path.join(dir, "generated.sh"),
+            DOT_INPUT_FD: "0",
+            PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+            SHELL: "/bin/bash",
+            USER: "dot-test-user",
+            SUDO_USER: "",
+          },
+          input: "REMOVE_ZSH\n",
+          timeout: 5000,
+        }
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toContain("status=0");
+      expect(fs.readFileSync(aptLog, "utf-8")).toContain("remove -y zsh");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("reads SSH risk confirmations through the configured runtime input fd", () => {
+    const configPath = path.resolve(import.meta.dirname, "../configs/dot.yaml");
+    const config = loadConfig(configPath);
+    const dir = tmpDir();
+    const home = path.join(dir, "home");
+
+    try {
+      fs.mkdirSync(path.join(home, ".ssh"), { recursive: true });
+      fs.writeFileSync(path.join(home, ".ssh", "authorized_keys"), "ssh-ed25519 AAAATEST dot-test\n");
+
+      const generated = assembleStandalone({ config, configPath });
+      const scriptPath = path.join(dir, "generated.sh");
+      fs.writeFileSync(scriptPath, withoutEntrypoint(generated));
+
+      const disablePasswordFunc = bashFunctionNameForId("ssh-disable-password");
+      const disablePasswordResult = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "$GENERATED_DOT_SCRIPT"
+trap - EXIT INT TERM
+${disablePasswordFunc}; printf "status=%s\\n" "$?"`,
+        ],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            GENERATED_DOT_SCRIPT: scriptPath,
+            DOT_INPUT_FD: "0",
+            HOME: home,
+            SHELL: "/bin/bash",
+            USER: "dot-test-user",
+            SUDO_USER: "",
+          },
+          input: "skip\n",
+          timeout: 5000,
+        }
+      );
+
+      expect(disablePasswordResult.status).toBe(0);
+      expect(disablePasswordResult.stdout).toContain("status=0");
+      expect(disablePasswordResult.stdout).toContain("未确认禁止密码登录，已跳过。");
+
+      const limitUsersFunc = bashFunctionNameForId("ssh-limit-users");
+      const limitUsersResult = spawnSync(
+        "bash",
+        [
+          "-lc",
+          `source "$GENERATED_DOT_SCRIPT"
+trap - EXIT INT TERM
+DOT_VARS[allowed_users]='otheruser'
+${limitUsersFunc}; printf "status=%s\\n" "$?"`,
+        ],
+        {
+          cwd: dir,
+          encoding: "utf-8",
+          env: {
+            ...process.env,
+            GENERATED_DOT_SCRIPT: scriptPath,
+            DOT_INPUT_FD: "0",
+            HOME: home,
+            SHELL: "/bin/bash",
+            USER: "dot-test-user",
+            SUDO_USER: "",
+          },
+          input: "skip\n",
+          timeout: 5000,
+        }
+      );
+
+      expect(limitUsersResult.status).toBe(0);
+      expect(limitUsersResult.stdout).toContain("status=0");
+      expect(limitUsersResult.stdout).toContain("未确认 AllowUsers 锁定风险，已跳过。");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("treats prompt fallback values as data instead of shell syntax", () => {
     const dir = tmpDir();
 

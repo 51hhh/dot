@@ -40,17 +40,30 @@ for ssh_allowed_user in "${SSH_ALLOWED_USERS[@]}"; do
 done
 
 if [[ "$current_user_allowed" -ne 1 && "${DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT:-}" != "1" ]]; then
-  if [[ -t 0 ]]; then
-    log_warn "AllowUsers 不包含当前目标用户 $SSH_CURRENT_USER，可能导致当前用户无法再 SSH 登录。"
-    printf '请输入 ALLOWUSERS 继续: '
-    read -r confirm_allowusers
-    if [[ "$confirm_allowusers" != "ALLOWUSERS" ]]; then
-      log_warn "未确认 AllowUsers 锁定风险，已跳过。"
-      return 0
+  log_warn "AllowUsers 不包含当前目标用户 $SSH_CURRENT_USER，可能导致当前用户无法再 SSH 登录。"
+  printf '请输入 ALLOWUSERS 继续: '
+  if declare -F dot_read_line >/dev/null 2>&1; then
+    if ! dot_read_line confirm_allowusers; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT=1。"
+      return 1
+    fi
+  elif [[ -r /dev/tty ]]; then
+    if ! IFS= read -r confirm_allowusers < /dev/tty; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT=1。"
+      return 1
+    fi
+  elif [[ -t 0 ]]; then
+    if ! IFS= read -r confirm_allowusers; then
+      log_error "读取确认输入失败；如需非交互执行，请设置 DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT=1。"
+      return 1
     fi
   else
     log_error "AllowUsers 不包含当前目标用户 $SSH_CURRENT_USER；非交互执行需设置 DOT_CONFIRM_SSH_ALLOWUSERS_LOCKOUT=1。"
     return 1
+  fi
+  if [[ "$confirm_allowusers" != "ALLOWUSERS" ]]; then
+    log_warn "未确认 AllowUsers 锁定风险，已跳过。"
+    return 0
   fi
 fi
 

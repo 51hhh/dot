@@ -356,6 +356,7 @@ DOT_PROMPT_LABELS['<item-id>']='<label>'
 - `key-compose` opens the manual tmux prefix composer and stores the composed value in `DOT_VARS[var]`.
 - `text` is reserved for text prompts; do not emit it without a runtime handler.
 - Prompt dispatch happens after the user selects the item and before plan preview/execution.
+- Generated snippet placeholders for prompt variables must render through `dot_get_var_or_default`, even when the configured/default value is an empty string. Empty text prompts such as SSH `allowed_users`, `pubkey_path`, and `github_user` must not be compiled into static `""` values.
 
 ### 4. Validation & Error Matrix
 
@@ -366,12 +367,15 @@ DOT_PROMPT_LABELS['<item-id>']='<label>'
 | Empty `prompt.label` | Zod rejects config during load |
 | Runtime item has no prompt | Prompt dispatch is skipped |
 | Runtime prompt returns back/cancel | Selection step returns to the previous menu without executing |
+| Prompt-backed template variable has empty default | Generated snippet still reads `DOT_VARS[var]` with `dot_get_var_or_default var ""` |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a `key-compose` config item emits `DOT_PROMPT_TYPES['id']='key-compose'` and generated runtime calls `dot_compose_tmux_key_prompt` for that item.
 - Base: a `key` config item emits `DOT_PROMPT_TYPES['id']='key'` and generated runtime calls `dot_record_key_prompt` for that item.
+- Base: `{{allowed_users}}` under a text prompt renders as `$(dot_get_var_or_default 'allowed_users' '')`.
 - Bad: adding a new prompt type to YAML without updating Zod, TypeScript types, generated metadata tests, and runtime dispatch.
+- Bad: a text prompt with `vars: { allowed_users: "" }` compiles to `USERS=""` and ignores the user's prompt input.
 
 ### 6. Tests Required
 

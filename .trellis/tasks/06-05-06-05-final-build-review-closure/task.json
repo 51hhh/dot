@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "Final closure verification passed: typecheck, lint, tests, build, generated script syntax, and focused dry-run checks. No blocking review findings.",
+  "notes": "Final closure verification passed: typecheck, lint, tests, build, generated script syntax, and focused dry-run checks. Review found and fixed execution confirmation input-source fallbacks plus empty-default prompt serialization.",
   "meta": {}
 }

@@ -85,6 +85,7 @@ dot_require_input_src
 - All key reads must go through `dot_read_key`.
 - All full-line reads must go through `dot_read_line`; do not duplicate `read -r ... < "$DOT_INPUT_SRC"` in prompt modules.
 - `dot_read_line` must not declare a local variable with the same name as the caller result variable, because bash dynamic scoping can shadow the intended output variable under `set -u`.
+- Template snippets that ask for execution-time confirmation should use `dot_read_line` when the helper exists, then fall back to `/dev/tty`, and only then stdin. This keeps `curl | bash` interactive menus and later confirmation prompts using the same input source contract.
 
 ### 4. Validation & Error Matrix
 
@@ -95,14 +96,17 @@ dot_require_input_src
 | `DOT_INPUT_FD` is non-numeric | Runtime returns non-zero and prints a clear input source error |
 | No input source available | Interactive helper returns non-zero before mutating selection state |
 | Text/number prompt receives EOF | Prompt returns non-zero and does not write `DOT_VARS` |
+| Template execution confirmation runs after `curl | bash` menu navigation | Confirmation reads from `dot_read_line` or `/dev/tty`, not from the consumed pipe stdin |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `runGeneratedBash(..., { input: "\n", env: { DOT_INPUT_FD: "0" } })` can select the first menu option in tests.
+- Good: a destructive template confirmation such as Zsh package removal accepts test input through `DOT_INPUT_FD=0` and still has a `/dev/tty` fallback for real `curl | bash` usage.
 - Base: a user runs `bash dist/dot.sh < answers.txt`; the interactive TUI still reads from `/dev/tty`.
 - Bad: `dot_read_key` reads from stdin directly and consumes piped install data.
 - Bad: tests rely on `/dev/fd/0` reopening for `spawnSync({ input })`.
 - Bad: prompt functions call `read -r value` directly instead of the shared line-read helper.
+- Bad: a template asks `[[ -t 0 ]]` before `read`, making confirmation fail after a successful `curl | bash` TUI session.
 
 ### 6. Tests Required
 

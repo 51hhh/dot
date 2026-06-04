@@ -33,7 +33,7 @@ Close the current implementation cycle by running the complete verification gate
 - `git diff --check`: passed.
 - `npm run typecheck`: passed.
 - `npm run lint`: passed.
-- `npm test`: passed, 11 files / 159 tests.
+- `npm test`: passed, 11 files / 161 tests.
 - `npm run build`: passed with requested elevated permission path.
 - `bash -n dist/dot.sh`: passed.
 - `bash dist/dot.sh --dry-run-plan --select tmux-plugin-resurrect tmux-tpm-finalize`: passed and preserved normal-before-post ordering.
@@ -42,4 +42,9 @@ Close the current implementation cycle by running the complete verification gate
 
 ## Review Outcome
 
-No blocking issues were found in the current source or generated script behavior. Existing specs already cover the checked contracts, so no additional spec update was needed for this closure-only task.
+Review found related reliability issues in execution-time confirmation and generated prompt value handling:
+
+- `templates/zsh/uninstall-apt-remove.sh`, `templates/ssh/disable-password.sh`, and `templates/ssh/limit-users.sh` read confirmations from stdin before consulting the standalone runtime input source. A real `curl | bash` session could navigate the TUI from `/dev/tty` but fail or misclassify later confirmation prompts.
+- Prompt-backed templates with empty defaults, such as SSH `allowed_users`, `pubkey_path`, and `github_user`, compiled to static empty strings and could ignore values collected into `DOT_VARS`.
+
+The issues were fixed by reading through `dot_read_line` when the standalone runtime helper exists, falling back to `/dev/tty`, and using stdin only as a final local-script fallback. Standalone snippet rendering now emits `dot_get_var_or_default` for prompt placeholders even when the fallback is empty. Regression tests cover Zsh and SSH confirmation reads through `DOT_INPUT_FD=0`, plus generated SSH prompt-value serialization. The contracts were recorded in `.trellis/spec/frontend/state-management.md` and `.trellis/spec/frontend/type-safety.md`.
