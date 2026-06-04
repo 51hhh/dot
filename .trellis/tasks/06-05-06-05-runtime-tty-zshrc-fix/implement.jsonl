@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Generated standalone runtime build and bash syntax contracts."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Generated runtime input, prompt, and flow navigation state contracts."}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Generated terminal UI checks and destructive Zsh recovery conventions."}

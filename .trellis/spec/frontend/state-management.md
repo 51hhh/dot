@@ -59,6 +59,74 @@ DOT_POST_PLAN=()
 
 Do not execute install snippets during selection. The generated flow is collect -> preview plan -> confirm -> execute -> summary.
 
+## Scenario: Generated runtime input source contract
+
+### 1. Scope / Trigger
+
+- Trigger: changing generated bash keyboard, text prompt, number prompt, plan confirmation, pause, or any function that reads user input.
+- Applies to `src/generator/standalone/runtime/terminal.ts`, `prompt.ts`, `selection.ts`, `dry-run.ts`, and generated runtime tests.
+
+### 2. Signatures
+
+Generated runtime helpers:
+
+```bash
+DOT_INPUT_FD=0 bash generated-test.sh
+dot_read_key
+dot_read_line <result-var>
+dot_require_input_src
+```
+
+### 3. Contracts
+
+- Real generated scripts read from `/dev/tty` by default so redirected stdin does not accidentally drive the interactive TUI.
+- Generated runtime tests may set `DOT_INPUT_FD=0` and pass input through the test process stdin.
+- When `DOT_INPUT_FD` is set, runtime reads must use bash `read -u "$DOT_INPUT_FD"` instead of reopening `/dev/fd/0`; Node `spawnSync({ input })` pipes cannot be reopened reliably as `/dev/fd/0`.
+- All key reads must go through `dot_read_key`.
+- All full-line reads must go through `dot_read_line`; do not duplicate `read -r ... < "$DOT_INPUT_SRC"` in prompt modules.
+- `dot_read_line` must not declare a local variable with the same name as the caller result variable, because bash dynamic scoping can shadow the intended output variable under `set -u`.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| No `DOT_INPUT_FD` and `/dev/tty` readable | Runtime reads from `/dev/tty` |
+| `DOT_INPUT_FD=0` in tests | Runtime reads from fd 0 with `read -u 0` |
+| `DOT_INPUT_FD` is non-numeric | Runtime returns non-zero and prints a clear input source error |
+| No input source available | Interactive helper returns non-zero before mutating selection state |
+| Text/number prompt receives EOF | Prompt returns non-zero and does not write `DOT_VARS` |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `runGeneratedBash(..., { input: "\n", env: { DOT_INPUT_FD: "0" } })` can select the first menu option in tests.
+- Base: a user runs `bash dist/dot.sh < answers.txt`; the interactive TUI still reads from `/dev/tty`.
+- Bad: `dot_read_key` reads from stdin directly and consumes piped install data.
+- Bad: tests rely on `/dev/fd/0` reopening for `spawnSync({ input })`.
+- Bad: prompt functions call `read -r value` directly instead of the shared line-read helper.
+
+### 6. Tests Required
+
+- Assembler runtime test: back keys still work with `DOT_INPUT_FD=0`.
+- Assembler runtime test: flow navigation and `endFlow` still work with stdin-injected input.
+- Assembler runtime test: text prompts write `DOT_VARS` through `dot_read_line`.
+- Generated script check: rebuild `dist/dot.sh` and run `bash -n dist/dot.sh`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```bash
+read -r value < "$DOT_INPUT_SRC"
+IFS= read -rsn1 key < /dev/tty
+```
+
+#### Correct
+
+```bash
+dot_read_line value || return 1
+key="$(dot_read_key)" || return 1
+```
+
 ## Scenario: Generated flow navigation state contract
 
 ### 1. Scope / Trigger

@@ -652,7 +652,7 @@ describe("CLI build dot config", () => {
     expect(script).toContain("ZSH_THEME=\"powerlevel10k/powerlevel10k\"");
     expect(script).toContain("ZSH_PLUGIN_LIST=(git z extract)");
     expect(script).toContain("dot_zsh_append_plugin \"zsh-syntax-highlighting\"");
-    expect(script).toContain("source \"$ZSH/oh-my-zsh.sh\"");
+    expect(script).toContain("[[ -f \"$ZSH/oh-my-zsh.sh\" ]] && source \"$ZSH/oh-my-zsh.sh\"");
     expect(script).toContain("[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh");
     expect(script).toContain("恢复最近的 ~/.zshrc 备份");
     expect(script).toContain("chsh -s \"$ZSH_PATH\" \"$CURRENT_USER\"");
