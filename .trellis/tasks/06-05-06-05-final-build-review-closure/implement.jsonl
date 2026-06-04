@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Generator, loader, and runtime verification are backend-facing."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Final review must preserve explicit failure handling in generated runtime paths."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Use project quality expectations while reviewing and closing the work."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Studio layout and export behavior were part of the recent change set under review."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Recent runtime input contract and Studio state handling updates are recorded here."}

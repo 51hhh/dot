@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/index.md", "reason": "Review backend-facing generator, loader, planner, and runtime contracts."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Check that shell runtime and API failure modes remain explicit."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Apply final quality gate expectations."}
+{"file": ".trellis/spec/frontend/index.md", "reason": "Review Studio-facing changes and layout behavior."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check Studio and planner type-safety expectations."}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Confirm recent state and generated runtime input-source contract notes."}
