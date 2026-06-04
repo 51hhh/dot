@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Plan Canvas component contract and low-zoom overview guidance."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Studio projection layout contracts for full visible graph, branch clearance, wrapping, and no crossing."}

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Verify compact layout still supports Plan Canvas overview and component expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify compact projection preserves no-overlap, branch clearance, wrapping, and no-crossing behavior."}

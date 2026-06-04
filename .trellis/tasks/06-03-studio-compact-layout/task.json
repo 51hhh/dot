@@ -1,0 +1,32 @@
+{
+  "id": "studio-compact-layout",
+  "name": "studio-compact-layout",
+  "title": "fix: 压缩 Studio Canvas 布局连线",
+  "description": "Compress Studio Plan Canvas projection spacing so full graph remains readable without extremely small zoom.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": null,
+  "priority": "P2",
+  "creator": "zwx19990307",
+  "assignee": "zwx19990307",
+  "createdAt": "2026-06-03",
+  "completedAt": "2026-06-03",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "src/studio/main.tsx",
+    "src/studio/projection.ts",
+    "tests/studio.test.ts",
+    ".trellis/spec/frontend/type-safety.md",
+    "package.json"
+  ],
+  "notes": "Compressed Studio projection spacing, switched semantic edges to straight React Flow edges, and added regression tests for compact width, edge spans, and wrapped post placement.",
+  "meta": {}
+}
