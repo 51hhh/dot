@@ -15,8 +15,20 @@ export interface StudioNestedFlowSummary {
   postCount: number;
 }
 
+export interface StudioStepFrameSummary {
+  singleCount: number;
+  multiCount: number;
+  postCount: number;
+  optionCount: number;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 export interface StudioNodeData extends PlanNode {
   nestedFlow?: StudioNestedFlowSummary;
+  stepFrame?: StudioStepFrameSummary;
 }
 
 export interface StudioProjectedNode {
@@ -373,6 +385,7 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   function buildStudioNodeData(id: string): StudioNodeData {
     const node = plan.nodes[id];
     const nestedIds = localFlowIds(id);
+    const stepFrame = buildStepFrameData(id);
     const nestedFlow = isCollapsibleFlow(id)
       ? {
           expanded: isExpandedFlow(id),
@@ -385,6 +398,43 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     return {
       ...node,
       nestedFlow,
+      stepFrame,
+    };
+  }
+
+  function buildStepFrameData(id: string): StudioStepFrameSummary | undefined {
+    if (id === plan.root) return undefined;
+    const localEdges = localLaneEdges(id).filter((edge) => visibleNodeIds.has(edge.to));
+    if (localEdges.length === 0) return undefined;
+
+    const parentPosition = positions.get(id);
+    if (!parentPosition) return undefined;
+
+    const childRects = localEdges
+      .map((edge) => positions.get(edge.to))
+      .filter((position): position is StudioLayoutPoint => Boolean(position))
+      .map((position) => ({
+        left: position.x - parentPosition.x,
+        top: position.y - parentPosition.y,
+        right: position.x - parentPosition.x + NODE_WIDTH,
+        bottom: position.y - parentPosition.y + NODE_HEIGHT,
+      }));
+    if (childRects.length === 0) return undefined;
+
+    const left = Math.min(0, ...childRects.map((rect) => rect.left)) - 28;
+    const top = Math.min(0, ...childRects.map((rect) => rect.top)) - 44;
+    const right = Math.max(NODE_WIDTH, ...childRects.map((rect) => rect.right)) + 28;
+    const bottom = Math.max(NODE_HEIGHT, ...childRects.map((rect) => rect.bottom)) + 28;
+
+    return {
+      singleCount: localEdges.filter((edge) => edge.type === "single").length,
+      multiCount: localEdges.filter((edge) => edge.type === "multi").length,
+      postCount: localEdges.filter((edge) => edge.type === "post").length,
+      optionCount: localEdges.filter((edge) => edge.type !== "post").length,
+      left,
+      top,
+      width: right - left,
+      height: bottom - top,
     };
   }
 }

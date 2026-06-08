@@ -35,8 +35,9 @@ Domain-specific labels and ids should be generated as data, not hardcoded into r
 The developer-side Studio renders `InstallationPlan` as a left-to-right graph:
 
 - Nodes use a left target handle and a right source handle.
-- `flow` edges form the main left-to-right spine.
-- `single` and `multi` edges branch from a parent to selectable options.
+- `flow` edges form the main left-to-right workflow step spine.
+- Flow steps that own `single`, `multi`, or `post` options should render as step frames: the step is the visible stage, and its local options are visually grouped inside that frame.
+- `single` and `multi` edges are local option relationships, not the primary workflow. They may render as grouped option nodes inside a step frame.
 - `dependency` edges are auxiliary and must not drive automatic layout.
 - `post` edges are visually distinct from normal structure and execution remains post-ordered.
 - Keep a compact legend in the toolbar or canvas area; do not reintroduce a right inspector for basic edge meaning.

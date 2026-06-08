@@ -141,6 +141,7 @@ export function buildStudioGraph(
 
 - `InstallationPlan` remains the semantic source of truth; Studio may project it into a display-specific graph without changing generator behavior.
 - Primary `flow` chains render as horizontal spines.
+- A visible workflow step that owns `single`, `multi`, or `post` children should expose `data.stepFrame` so the renderer can draw a bounded step frame around local options.
 - `single` children render as real visible draggable nodes in a local lane near their parent, connected by visible `single` edges.
 - `multi` children render as real visible draggable nodes in a local lane near their parent, connected by visible `multi` edges.
 - Post children render as real visible draggable nodes near their owning step, connected by visible `post` edges, but they do not enter or advance the main flow spine.
@@ -163,6 +164,7 @@ export function buildStudioGraph(
 | Condition | Expected behavior |
 |-----------|-------------------|
 | Real tmux plan is projected | `primarySpines.tmux` is the seven visible tmux macro steps |
+| Flow step owns local single/multi/post options | The step node includes `data.stepFrame` with option counts and frame bounds that contain its local option nodes |
 | Single/multi children exist under a visible step | Children appear as projected nodes and visible `single` / `multi` edges |
 | `showDependencies` is false or omitted | No projected edge has `type === "dependency"` |
 | `showDependencies` is true | Dependency edges are dashed/low emphasis and connect visible owner nodes |
@@ -181,6 +183,7 @@ export function buildStudioGraph(
 ### 5. Good/Base/Bad Cases
 
 - Good: `tmux -> tmux-install -> tmux-github-mirror -> tmux-prefix -> tmux-plugins -> tmux-status -> tmux-options -> tmux-finalize` reads as one horizontal spine.
+- Good: `tmux-install` is rendered as the install-method step frame, and `apt`, `source`, and the recommended shortcut are grouped inside that frame.
 - Base: `tmux-prefix` displays Ctrl+A/Ctrl+B/custom choices as draggable option nodes near the prefix step.
 - Base: `tmux-options` displays option choices as draggable option nodes near the options step.
 - Base: `tmux-plugins` shows a collapsed nested-flow summary until expanded.
@@ -190,10 +193,12 @@ export function buildStudioGraph(
 - Bad: post nodes create normal flow branches that suggest they run before the next macro step.
 - Bad: a large terminal option group forms one long vertical stack.
 - Bad: local option cards overlap or occupy the same visual column as the next flow step.
+- Bad: making option nodes look like first-class workflow steps instead of grouping them under their owning step.
 
 ### 6. Tests Required
 
 - Studio projection test: real tmux primary spine is the seven macro steps.
+- Studio projection test: workflow steps with local options expose `data.stepFrame`, and their option nodes sit inside the frame bounds.
 - Studio projection test: single/multi options render as visible nodes with typed edges.
 - Studio projection test: dependencies are hidden by default and toggled on explicitly.
 - Studio projection test: nested `tmux-plugins` flow is collapsed by default and expands locally.

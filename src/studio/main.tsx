@@ -98,14 +98,27 @@ const REACT_FLOW_EDGE_TYPE = "straight";
 function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
   const badge = badgeForNode(data);
   const draftClass = data.draftOperation ? ` plan-node-draft plan-node-draft-${data.draftOperation}` : "";
+  const stepFrameClass = data.stepFrame ? " plan-node-step-frame" : "";
   return (
-    <div className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode}${draftClass} ${selected ? "selected" : ""}`} onClick={() => data.onSelect(id)}>
+    <div
+      className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode}${draftClass}${stepFrameClass} ${selected ? "selected" : ""}`}
+      style={stepFrameStyle(data)}
+      onClick={() => data.onSelect(id)}
+    >
       <Handle type="target" position={Position.Left} className="plan-handle plan-handle-target" />
       <div className="node-title-row">
         <strong>{data.label}</strong>
         <span className={`mode-badge mode-badge-${badge.mode}`} title={badge.title}>{badge.label}</span>
       </div>
       <small>{id} · {data.kind}{data.post ? " · post" : ""}{data.hidden ? " · hidden" : ""}{data.draftOperation ? ` · draft ${data.draftOperation}` : ""}</small>
+      {data.stepFrame ? (
+        <div className="step-frame-summary" aria-label="Step frame summary">
+          <span>{data.stepFrame.optionCount} 选项</span>
+          {data.stepFrame.singleCount > 0 ? <span>{data.stepFrame.singleCount} 单选</span> : null}
+          {data.stepFrame.multiCount > 0 ? <span>{data.stepFrame.multiCount} 多选</span> : null}
+          {data.stepFrame.postCount > 0 ? <span>{data.stepFrame.postCount} 后置</span> : null}
+        </div>
+      ) : null}
       {data.description ? <p className="node-description">{data.description}</p> : null}
       {data.nestedFlow ? (
         <div className="nested-flow-summary">
@@ -208,11 +221,12 @@ function App() {
     setNodes(draftGraph.nodes.map((node) => ({
       id: node.id,
       type: "planNode",
-      position: manualPositions.get(node.id) ?? node.position,
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
-    })));
+          position: manualPositions.get(node.id) ?? node.position,
+          sourcePosition: Position.Right,
+          targetPosition: Position.Left,
+          zIndex: node.data.stepFrame ? 0 : 1,
+          data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
+        })));
     setEdges(buildReactFlowEdges(draftGraph.edges, draftEdgeChanges, draftGraph.visibleNodeIds));
   }, [draftEdgeChanges, draftNodeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion]);
 
@@ -743,6 +757,16 @@ function edgeStyle(type: PlanEdge["type"]) {
     flow: { stroke: "#a78bfa", strokeWidth: 2.5 },
   };
   return palette[type];
+}
+
+function stepFrameStyle(data: FlowNodeData): React.CSSProperties | undefined {
+  if (!data.stepFrame) return undefined;
+  return {
+    "--step-frame-left": `${data.stepFrame.left}px`,
+    "--step-frame-top": `${data.stepFrame.top}px`,
+    "--step-frame-width": `${data.stepFrame.width}px`,
+    "--step-frame-height": `${data.stepFrame.height}px`,
+  } as React.CSSProperties;
 }
 
 function applyDraftNodeChangesToGraph(
