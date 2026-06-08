@@ -71,6 +71,30 @@ function projectedEdgeSegment(graph: ReturnType<typeof buildStudioGraph>, edge: 
   };
 }
 
+function expectNodeInsideStepFrame(
+  graph: ReturnType<typeof buildStudioGraph>,
+  frameId: string,
+  nodeId: string
+) {
+  const frame = graph.nodes.find((node) => node.id === frameId);
+  const node = graph.nodes.find((node) => node.id === nodeId);
+  expect(frame, `missing frame node ${frameId}`).toBeDefined();
+  expect(node, `missing framed node ${nodeId}`).toBeDefined();
+  expect(frame!.data.stepFrame, `${frameId} should have stepFrame data`).toBeDefined();
+
+  const bounds = {
+    left: frame!.position.x + frame!.data.stepFrame!.left,
+    top: frame!.position.y + frame!.data.stepFrame!.top,
+    right: frame!.position.x + frame!.data.stepFrame!.left + frame!.data.stepFrame!.width,
+    bottom: frame!.position.y + frame!.data.stepFrame!.top + frame!.data.stepFrame!.height,
+  };
+
+  expect(node!.position.x, `${nodeId} should be inside ${frameId} horizontally`).toBeGreaterThanOrEqual(bounds.left);
+  expect(node!.position.y, `${nodeId} should be inside ${frameId} vertically`).toBeGreaterThanOrEqual(bounds.top);
+  expect(node!.position.x + approxNodeWidth, `${nodeId} should be inside ${frameId} horizontally`).toBeLessThanOrEqual(bounds.right);
+  expect(node!.position.y + approxNodeHeight, `${nodeId} should be inside ${frameId} vertically`).toBeLessThanOrEqual(bounds.bottom);
+}
+
 function segmentsIntersect(
   first: NonNullable<ReturnType<typeof projectedEdgeSegment>>,
   second: NonNullable<ReturnType<typeof projectedEdgeSegment>>
@@ -107,6 +131,9 @@ describe("studio canvas", () => {
     expect(source).toContain("manualPositions");
     expect(source).toContain("focusRequestId");
     expect(source).toContain("badgeForNode(data)");
+    expect(source).toContain("stepFrameStyle(data)");
+    expect(source).toContain("step-frame-summary");
+    expect(source).toContain("aria-label=\"Step frame summary\"");
     expect(source).toContain("badgeForNodeId(node.id, plan)");
     expect(source).toContain("single = exclusive branch");
     expect(source).toContain("multi = selectable independent group");
@@ -180,6 +207,8 @@ describe("studio canvas", () => {
     expect(css).toContain(".plan-node-mode-single");
     expect(css).toContain(".plan-node-mode-multi");
     expect(css).toContain(".plan-node-mode-flow");
+    expect(css).toContain(".plan-node-step-frame::before");
+    expect(css).toContain(".step-frame-summary");
     expect(css).toContain(".nested-flow-summary");
     expect(css).toContain(".diagnostics-panel");
     expect(css).toContain(".status-error");
@@ -250,6 +279,36 @@ describe("studio canvas", () => {
     expect(ctrlA.position.y).toBeLessThan(prefix.position.y);
     expect(mouse.position.y).toBeGreaterThan(options.position.y);
     expect(mouse.position.x).toBeGreaterThan(options.position.x);
+  });
+
+  it("projects workflow steps as frames around their local options", () => {
+    const graph = buildStudioGraph(buildInstallationPlan(loadConfig(dotConfig)));
+    const install = graph.nodes.find((node) => node.id === "tmux-install")!;
+    const options = graph.nodes.find((node) => node.id === "tmux-options")!;
+    const finalize = graph.nodes.find((node) => node.id === "tmux-finalize")!;
+
+    expect(install.data.stepFrame).toEqual(expect.objectContaining({
+      singleCount: 2,
+      multiCount: 0,
+      postCount: 1,
+      optionCount: 2,
+    }));
+    expect(options.data.stepFrame).toEqual(expect.objectContaining({
+      singleCount: 0,
+      multiCount: 5,
+      postCount: 0,
+      optionCount: 5,
+    }));
+    expect(finalize.data.stepFrame).toEqual(expect.objectContaining({
+      singleCount: 0,
+      multiCount: 0,
+      postCount: 2,
+      optionCount: 0,
+    }));
+    expectNodeInsideStepFrame(graph, "tmux-install", "tmux-install-apt");
+    expectNodeInsideStepFrame(graph, "tmux-install", "tmux-install-recommended");
+    expectNodeInsideStepFrame(graph, "tmux-options", "tmux-opt-mouse");
+    expectNodeInsideStepFrame(graph, "tmux-finalize", "tmux-final-notes");
   });
 
   it("projects local lanes without default card overlap", () => {
