@@ -130,6 +130,11 @@ describe("studio canvas", () => {
     expect(source).toContain('data-action="draft-edge-type"');
     expect(source).toContain('data-action="export-draft"');
     expect(source).toContain('data-action="clear-draft"');
+    expect(source).toContain("draftEditorOpen, setDraftEditorOpen");
+    expect(source).toContain('data-action="toggle-draft-editor"');
+    expect(source).toContain("aria-pressed={draftEditorOpen}");
+    expect(source).toContain('draftEditorOpen ? "收起结构编辑" : "结构编辑"');
+    expect(source).toContain("{draftEditorOpen ? (");
     expect(source).toContain('data-action="draft-node-id"');
     expect(source).toContain('data-action="draft-node-label"');
     expect(source).toContain('data-action="draft-node-mode"');
@@ -142,6 +147,7 @@ describe("studio canvas", () => {
     expect(source).toContain(">连线类型<");
     expect(source).toContain(">导出草案<");
     expect(source).toContain(">清空草案<");
+    expect(source).toContain("结构编辑");
     expect(source).toContain(">添加草案节点<");
     expect(source).toContain(">更新草案节点<");
     expect(source).toContain(">删除草案节点<");
@@ -179,6 +185,10 @@ describe("studio canvas", () => {
     expect(css).toContain(".status-error");
     expect(css).toContain(".draft-count");
     expect(css).toContain(".draft-editor");
+    expect(css).toContain("#canvas-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden;");
+    expect(css).toContain(".draft-editor { flex: 0 0 auto;");
+    expect(css).toContain("max-height: 260px");
+    expect(css).toContain(".react-flow { flex: 1 1 auto; min-height: 0;");
     expect(css).toContain(".draft-export");
     expect(css).toContain(".plan-node-draft");
     expect(css).toContain(".plan-node-draft-add");

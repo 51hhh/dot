@@ -139,6 +139,7 @@ function App() {
   const [focusRequestId, setFocusRequestId] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showDependencies, setShowDependencies] = useState(false);
+  const [draftEditorOpen, setDraftEditorOpen] = useState(false);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
   const [reactFlowInstance, setReactFlowInstance] = useState<{ setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void } | null>(null);
   const [status, setStatus] = useState("");
@@ -536,132 +537,142 @@ function App() {
             </select>
           </label>
           <span className="draft-count" aria-label="Draft change count">草案 {draftChangeCount}</span>
+          <button
+            className={`ghost toolbar-toggle ${draftEditorOpen ? "active" : ""}`}
+            data-action="toggle-draft-editor"
+            aria-pressed={draftEditorOpen}
+            onClick={() => setDraftEditorOpen((value) => !value)}
+          >
+            {draftEditorOpen ? "收起结构编辑" : "结构编辑"}
+          </button>
           <button data-action="export-draft" onClick={exportDraft} disabled={draftChangeCount === 0}>导出草案</button>
           <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftChangeCount === 0}>清空草案</button>
           <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
           <span className={status.startsWith("Save failed") ? "status status-error" : "status"}>{status}</span>
         </div>
-        <div className="draft-editor" aria-label="Draft node editor">
-          <section className="draft-editor-section">
-            <h3>新增节点</h3>
-            <label className="draft-field">
-              <span>ID</span>
-              <input
-                data-action="draft-node-id"
-                value={newNodeDraft.id}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, id: event.target.value }))}
-                placeholder="node-id"
-              />
-            </label>
-            <label className="draft-field">
-              <span>Label</span>
-              <input
-                data-action="draft-node-label"
-                value={newNodeDraft.label}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, label: event.target.value }))}
-                placeholder="节点名称"
-              />
-            </label>
-            <label className="draft-field draft-field-wide">
-              <span>Description</span>
-              <input
-                data-action="draft-node-description"
-                value={newNodeDraft.description}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, description: event.target.value }))}
-                placeholder="可选"
-              />
-            </label>
-            <label className="draft-field">
-              <span>Mode</span>
-              <select
-                data-action="draft-node-mode"
-                value={newNodeDraft.mode}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
-              >
-                {draftNodeModes.map((mode) => (
-                  <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="draft-check">
-              <input
-                data-action="draft-node-post"
-                type="checkbox"
-                checked={newNodeDraft.post}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, post: event.target.checked }))}
-              />
-              <span>post</span>
-            </label>
-            <label className="draft-check">
-              <input
-                data-action="draft-node-hidden"
-                type="checkbox"
-                checked={newNodeDraft.hidden}
-                onChange={(event) => setNewNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
-              />
-              <span>hidden</span>
-            </label>
-            <button type="button" className="ghost" data-action="generate-draft-node-id" onClick={generateDraftNodeId}>生成 ID</button>
-            <button type="button" data-action="add-draft-node" onClick={addDraftNode}>添加草案节点</button>
-          </section>
-          <section className="draft-editor-section draft-editor-section-selected">
-            <h3>编辑选中节点</h3>
-            <span className="draft-selected-id">{selectedId}</span>
-            <label className="draft-field">
-              <span>Label</span>
-              <input
-                data-action="draft-node-edit-label"
-                value={selectedNodeDraft.label}
-                disabled={selectedNodeEditDisabled}
-                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, label: event.target.value }))}
-              />
-            </label>
-            <label className="draft-field draft-field-wide">
-              <span>Description</span>
-              <input
-                data-action="draft-node-edit-description"
-                value={selectedNodeDraft.description}
-                disabled={selectedNodeEditDisabled}
-                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, description: event.target.value }))}
-              />
-            </label>
-            <label className="draft-field">
-              <span>Mode</span>
-              <select
-                data-action="draft-node-edit-mode"
-                value={selectedNodeDraft.mode}
-                disabled={selectedNodeEditDisabled}
-                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
-              >
-                {draftNodeModes.map((mode) => (
-                  <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
-                ))}
-              </select>
-            </label>
-            <label className="draft-check">
-              <input
-                data-action="draft-node-edit-post"
-                type="checkbox"
-                checked={selectedNodeDraft.post}
-                disabled={selectedNodeEditDisabled}
-                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, post: event.target.checked }))}
-              />
-              <span>post</span>
-            </label>
-            <label className="draft-check">
-              <input
-                data-action="draft-node-edit-hidden"
-                type="checkbox"
-                checked={selectedNodeDraft.hidden}
-                disabled={selectedNodeEditDisabled}
-                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
-              />
-              <span>hidden</span>
-            </label>
-            <button type="button" data-action="update-draft-node" onClick={updateSelectedDraftNode} disabled={selectedNodeEditDisabled}>更新草案节点</button>
-            <button type="button" className="ghost danger" data-action="remove-draft-node" onClick={removeSelectedDraftNode} disabled={selectedId === plan.root}>删除草案节点</button>
-          </section>
-        </div>
+        {draftEditorOpen ? (
+          <div className="draft-editor" aria-label="Draft node editor">
+            <section className="draft-editor-section">
+              <h3>新增节点</h3>
+              <label className="draft-field">
+                <span>ID</span>
+                <input
+                  data-action="draft-node-id"
+                  value={newNodeDraft.id}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, id: event.target.value }))}
+                  placeholder="node-id"
+                />
+              </label>
+              <label className="draft-field">
+                <span>Label</span>
+                <input
+                  data-action="draft-node-label"
+                  value={newNodeDraft.label}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, label: event.target.value }))}
+                  placeholder="节点名称"
+                />
+              </label>
+              <label className="draft-field draft-field-wide">
+                <span>Description</span>
+                <input
+                  data-action="draft-node-description"
+                  value={newNodeDraft.description}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, description: event.target.value }))}
+                  placeholder="可选"
+                />
+              </label>
+              <label className="draft-field">
+                <span>Mode</span>
+                <select
+                  data-action="draft-node-mode"
+                  value={newNodeDraft.mode}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
+                >
+                  {draftNodeModes.map((mode) => (
+                    <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="draft-check">
+                <input
+                  data-action="draft-node-post"
+                  type="checkbox"
+                  checked={newNodeDraft.post}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, post: event.target.checked }))}
+                />
+                <span>post</span>
+              </label>
+              <label className="draft-check">
+                <input
+                  data-action="draft-node-hidden"
+                  type="checkbox"
+                  checked={newNodeDraft.hidden}
+                  onChange={(event) => setNewNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
+                />
+                <span>hidden</span>
+              </label>
+              <button type="button" className="ghost" data-action="generate-draft-node-id" onClick={generateDraftNodeId}>生成 ID</button>
+              <button type="button" data-action="add-draft-node" onClick={addDraftNode}>添加草案节点</button>
+            </section>
+            <section className="draft-editor-section draft-editor-section-selected">
+              <h3>编辑选中节点</h3>
+              <span className="draft-selected-id">{selectedId}</span>
+              <label className="draft-field">
+                <span>Label</span>
+                <input
+                  data-action="draft-node-edit-label"
+                  value={selectedNodeDraft.label}
+                  disabled={selectedNodeEditDisabled}
+                  onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, label: event.target.value }))}
+                />
+              </label>
+              <label className="draft-field draft-field-wide">
+                <span>Description</span>
+                <input
+                  data-action="draft-node-edit-description"
+                  value={selectedNodeDraft.description}
+                  disabled={selectedNodeEditDisabled}
+                  onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, description: event.target.value }))}
+                />
+              </label>
+              <label className="draft-field">
+                <span>Mode</span>
+                <select
+                  data-action="draft-node-edit-mode"
+                  value={selectedNodeDraft.mode}
+                  disabled={selectedNodeEditDisabled}
+                  onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
+                >
+                  {draftNodeModes.map((mode) => (
+                    <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="draft-check">
+                <input
+                  data-action="draft-node-edit-post"
+                  type="checkbox"
+                  checked={selectedNodeDraft.post}
+                  disabled={selectedNodeEditDisabled}
+                  onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, post: event.target.checked }))}
+                />
+                <span>post</span>
+              </label>
+              <label className="draft-check">
+                <input
+                  data-action="draft-node-edit-hidden"
+                  type="checkbox"
+                  checked={selectedNodeDraft.hidden}
+                  disabled={selectedNodeEditDisabled}
+                  onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
+                />
+                <span>hidden</span>
+              </label>
+              <button type="button" data-action="update-draft-node" onClick={updateSelectedDraftNode} disabled={selectedNodeEditDisabled}>更新草案节点</button>
+              <button type="button" className="ghost danger" data-action="remove-draft-node" onClick={removeSelectedDraftNode} disabled={selectedId === plan.root}>删除草案节点</button>
+            </section>
+          </div>
+        ) : null}
         {exportText ? (
           <textarea
             className="draft-export"

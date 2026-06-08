@@ -5,6 +5,8 @@ import { z } from "zod";
 import type { Config, MenuItem } from "../loader/schema.js";
 import type { InstallationPlan, PlanDiagnostic, PlanNode } from "./types.js";
 
+const ROOT_ID = "__root";
+
 const PlanPositionSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
@@ -314,10 +316,11 @@ export function normalizePlanOverlay(overlay: PlanOverlay | null): NormalizedPla
 export function overlayDiagnosticsForConfig(overlay: PlanOverlay | null, config: Config): PlanDiagnostic[] {
   const normalized = normalizePlanOverlay(overlay);
   const allNodes = collectConfigNodes(config);
+  const validPositionIds = new Set([...allNodes.keys(), ROOT_ID]);
   const diagnostics: PlanDiagnostic[] = [...normalized.diagnostics];
 
   for (const id of Object.keys(normalized.positions)) {
-    if (!allNodes.has(id)) {
+    if (!validPositionIds.has(id)) {
       diagnostics.push({
         level: "warn",
         code: "stale_node_id",

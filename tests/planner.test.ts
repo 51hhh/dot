@@ -9,6 +9,7 @@ import {
   applyPlanOverlayToConfig,
   loadPlanOverlay,
   mergePlanOverlay,
+  overlayDiagnosticsForConfig,
   parsePlanOverlayPayload,
   PlanOverlayValidationError,
   savePlanOverlay,
@@ -98,6 +99,31 @@ describe("buildInstallationPlan", () => {
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("allows saved root positions without stale overlay diagnostics", () => {
+    const config: Config = {
+      name: "dot",
+      version: "1.0",
+      menuMode: "single",
+      menu: [{ id: "tmux", label: "Tmux" }],
+    };
+    const diagnostics = overlayDiagnosticsForConfig({
+      version: 2,
+      positions: {
+        __root: { x: 0, y: 10 },
+        stale: { x: 20, y: 30 },
+      },
+    }, config);
+
+    expect(diagnostics).not.toContainEqual(expect.objectContaining({
+      code: "stale_node_id",
+      nodeId: "__root",
+    }));
+    expect(diagnostics).toContainEqual(expect.objectContaining({
+      code: "stale_node_id",
+      nodeId: "stale",
+    }));
   });
 
   it("rejects unsafe overlay field types at the file boundary", () => {

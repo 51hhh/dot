@@ -285,7 +285,9 @@ type AgentDraftExport = {
 - Studio may let users add/update/remove nodes and add/delete edges locally for planning, but those semantic changes must not be sent to `PUT /api/plan`.
 - `Save layout` remains positions-only and must continue to send `patch: { version: 1, positions }`.
 - `Save layout` must filter out draft-only nodes so the positions overlay does not store nodes that do not exist in source config.
+- Saved positions may include the Plan root id `__root`; overlay stale-node diagnostics must treat root positions as valid layout data even though root is not authored in the YAML `menu`.
 - Draft export must include only changed operations, never a full plan dump.
+- Draft node editing controls must be secondary to the graph: keep them behind a compact toggle or bounded panel, and never let the editor consume the primary React Flow viewport by default.
 - Draft node operations are always source-only handoff items. They require `configs/*.yaml` edits and tests, not overlay writes.
 - Draft edge types must be explicit; never infer `single`, `multi`, `flow`, `dependency`, or `post` from node coordinates.
 - `dependency` add/remove operations can be represented in `overlayPatchDraft.dependencies`.
@@ -306,6 +308,8 @@ type AgentDraftExport = {
 | User deletes a newly added draft edge | Remove the matching `add` draft operation instead of adding a `remove` |
 | User exports with no draft changes | Produce an empty changed-operation prompt or a clear no-change status |
 | User saves layout after draft edits | Persist positions only; semantic draft operations are not saved |
+| Overlay contains `positions.__root` | Keep the root position and do not emit `stale_node_id` |
+| Studio opens with no draft editor toggle active | React Flow graph uses the remaining viewport and the draft editor is not visible |
 
 ### 5. Good/Base/Bad Cases
 
@@ -314,8 +318,11 @@ type AgentDraftExport = {
 - Good: updating `ssh` from `multi` to `flow` exports an `update` node operation and does not write to sidecar overlay.
 - Good: adding `tmux-tpm -> tmux-plugin-catppuccin` as `dependency` appears under `overlayPatchDraft.dependencies.add`.
 - Base: dragging a node changes only layout positions.
+- Base: `__root` appears in layout positions because it is a generated plan node, not a YAML menu item.
 - Bad: exporting the full `InstallationPlan` when only one edge changed.
 - Bad: saving a draft-only node position to `configs/dot.plan.json`.
+- Bad: flagging saved `__root` positions as stale overlay nodes.
+- Bad: rendering node edit forms as the only flexible row in `#canvas-panel`, pushing React Flow below the viewport.
 - Bad: writing `flow`/`single`/`multi` edge edits directly into sidecar overlay and assuming build output changed safely.
 - Bad: inferring order from x/y coordinates after a drag.
 
@@ -327,6 +334,8 @@ type AgentDraftExport = {
 - Studio source test: delete key removes edges while node deletion remains blocked by `onNodesChange` filtering.
 - Studio source test: layout save still contains `patch: { version: 1, positions }` and filters draft-only nodes.
 - Studio source test: export text includes `nodeOperations`, `changedOperations`, `overlayPatchDraft`, and `sourceOnlyOperations`.
+- Studio source test: draft editor is controlled by a visible toggle and canvas layout gives React Flow the flexible viewport.
+- Planner test: overlay diagnostics allow `positions.__root` while still warning on truly stale position ids.
 - Studio source test: CSS contains a clear draft node style.
 - Build check: `npm run build` must still produce the Studio bundle.
 
