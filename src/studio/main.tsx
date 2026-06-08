@@ -19,7 +19,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { type InstallationPlan, type PlanEdge, type PlanNode } from "../planner/types.js";
-import { buildStudioGraph, type StudioNodeData, type StudioProjectedEdge } from "./projection.js";
+import { buildStudioGraph, type StudioNodeData, type StudioProjectedEdge, type StudioProjectedNode } from "./projection.js";
 import "./studio.css";
 
 type StudioPlan = InstallationPlan & {
@@ -33,6 +33,7 @@ type StudioPlan = InstallationPlan & {
 type FlowNodeData = StudioNodeData & {
   onSelect: (id: string) => void;
   onToggleExpand: (id: string) => void;
+  draftOperation?: DraftNodeAction;
 } & Record<string, unknown>;
 
 type PlanFlowNode = Node<FlowNodeData>;
@@ -44,6 +45,36 @@ type DraftEdgeChange = {
   to: string;
   type: EditableEdgeType;
 };
+type DraftNodeMode = Extract<PlanNode["mode"], "single" | "multi" | "flow">;
+type DraftNodeAction = "add" | "update" | "remove";
+type DraftNodeChange = {
+  action: DraftNodeAction;
+  id: string;
+  label?: string;
+  description?: string;
+  mode?: DraftNodeMode;
+  post?: boolean;
+  hidden?: boolean;
+  position?: { x: number; y: number };
+};
+type DraftNodeFormState = {
+  id: string;
+  label: string;
+  description: string;
+  mode: DraftNodeMode;
+  post: boolean;
+  hidden: boolean;
+};
+type DraftStudioNode = StudioProjectedNode & {
+  data: StudioNodeData & {
+    draftOperation?: DraftNodeAction;
+  };
+};
+type DraftStudioGraph = {
+  nodes: DraftStudioNode[];
+  edges: StudioProjectedEdge[];
+  visibleNodeIds: Set<string>;
+};
 
 const editableEdgeTypes: EditableEdgeType[] = ["flow", "single", "multi", "dependency", "post"];
 const editableEdgeLabels: Record<EditableEdgeType, string> = {
@@ -53,6 +84,12 @@ const editableEdgeLabels: Record<EditableEdgeType, string> = {
   dependency: "依赖",
   post: "后置",
 };
+const draftNodeModes: DraftNodeMode[] = ["single", "multi", "flow"];
+const draftNodeModeLabels: Record<DraftNodeMode, string> = {
+  single: "单选",
+  multi: "多选",
+  flow: "流程",
+};
 const MIN_CANVAS_ZOOM = 0.05;
 const MAX_CANVAS_ZOOM = 2;
 const CANVAS_FIT_VIEW_OPTIONS = { padding: 0.08, minZoom: MIN_CANVAS_ZOOM, maxZoom: 0.85 };
@@ -60,14 +97,15 @@ const REACT_FLOW_EDGE_TYPE = "straight";
 
 function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
   const badge = badgeForNode(data);
+  const draftClass = data.draftOperation ? ` plan-node-draft plan-node-draft-${data.draftOperation}` : "";
   return (
-    <div className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode} ${selected ? "selected" : ""}`} onClick={() => data.onSelect(id)}>
+    <div className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode}${draftClass} ${selected ? "selected" : ""}`} onClick={() => data.onSelect(id)}>
       <Handle type="target" position={Position.Left} className="plan-handle plan-handle-target" />
       <div className="node-title-row">
         <strong>{data.label}</strong>
         <span className={`mode-badge mode-badge-${badge.mode}`} title={badge.title}>{badge.label}</span>
       </div>
-      <small>{id} · {data.kind}{data.post ? " · post" : ""}{data.hidden ? " · hidden" : ""}</small>
+      <small>{id} · {data.kind}{data.post ? " · post" : ""}{data.hidden ? " · hidden" : ""}{data.draftOperation ? ` · draft ${data.draftOperation}` : ""}</small>
       {data.description ? <p className="node-description">{data.description}</p> : null}
       {data.nestedFlow ? (
         <div className="nested-flow-summary">
@@ -106,7 +144,25 @@ function App() {
   const [status, setStatus] = useState("");
   const [draftEdgeType, setDraftEdgeType] = useState<EditableEdgeType>("flow");
   const [draftEdgeChanges, setDraftEdgeChanges] = useState<DraftEdgeChange[]>([]);
+  const [draftNodeChanges, setDraftNodeChanges] = useState<DraftNodeChange[]>([]);
+  const [newNodeDraft, setNewNodeDraft] = useState<DraftNodeFormState>({
+    id: "",
+    label: "",
+    description: "",
+    mode: "single",
+    post: false,
+    hidden: false,
+  });
+  const [selectedNodeDraft, setSelectedNodeDraft] = useState<DraftNodeFormState>({
+    id: "",
+    label: "",
+    description: "",
+    mode: "single",
+    post: false,
+    hidden: false,
+  });
   const [exportText, setExportText] = useState("");
+  const draftChangeCount = draftEdgeChanges.length + draftNodeChanges.length;
 
   const selectNode = useCallback((id: string) => setSelectedId(id), []);
   const toggleNodeExpansion = useCallback((id: string) => {
@@ -132,8 +188,23 @@ function App() {
 
   useEffect(() => {
     if (!plan) return;
+    const selectedNode = nodeSnapshotForId(plan, draftNodeChanges, selectedId);
+    if (!selectedNode) return;
+    setSelectedNodeDraft({
+      id: selectedNode.id,
+      label: selectedNode.label,
+      description: selectedNode.description ?? "",
+      mode: isDraftNodeMode(selectedNode.mode) ? selectedNode.mode : "single",
+      post: Boolean(selectedNode.post),
+      hidden: Boolean(selectedNode.hidden),
+    });
+  }, [draftNodeChanges, plan, selectedId]);
+
+  useEffect(() => {
+    if (!plan) return;
     const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds });
-    setNodes(projection.nodes.map((node) => ({
+    const draftGraph = applyDraftNodeChangesToGraph(projection, draftNodeChanges);
+    setNodes(draftGraph.nodes.map((node) => ({
       id: node.id,
       type: "planNode",
       position: manualPositions.get(node.id) ?? node.position,
@@ -141,8 +212,8 @@ function App() {
       targetPosition: Position.Left,
       data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
     })));
-    setEdges(buildReactFlowEdges(projection.edges, draftEdgeChanges));
-  }, [draftEdgeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion]);
+    setEdges(buildReactFlowEdges(draftGraph.edges, draftEdgeChanges, draftGraph.visibleNodeIds));
+  }, [draftEdgeChanges, draftNodeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion]);
 
   useEffect(() => {
     if (!focusRequestId || !reactFlowInstance) return;
@@ -202,6 +273,133 @@ function App() {
     setStatus(`已记录 ${editableEdgeLabels[draftEdgeType]}连线草案：${connection.source} -> ${connection.target}`);
   }, [draftEdgeType, edges]);
 
+  const generateDraftNodeId = useCallback(() => {
+    if (!plan) return;
+    const baseId = normalizeDraftNodeId(newNodeDraft.label || newNodeDraft.id || "draft-node");
+    const id = uniqueDraftNodeId(baseId, plan, draftNodeChanges);
+    setNewNodeDraft((current) => ({ ...current, id }));
+  }, [draftNodeChanges, newNodeDraft.id, newNodeDraft.label, plan]);
+
+  const addDraftNode = useCallback(() => {
+    if (!plan) {
+      setStatus("计划尚未加载。");
+      return;
+    }
+
+    const id = normalizeDraftNodeId(newNodeDraft.id || newNodeDraft.label);
+    const label = newNodeDraft.label.trim();
+    if (!id || !label) {
+      setStatus("新增草案节点需要 id 和 label。");
+      return;
+    }
+
+    if (nodeExistsForDraft(plan, draftNodeChanges, id)) {
+      setStatus(`新增草案节点已跳过：${id} 已存在。`);
+      return;
+    }
+
+    const position = draftNodePosition(nodes, selectedId, draftNodeChanges.length);
+    const nextChange: DraftNodeChange = {
+      action: "add",
+      id,
+      label,
+      description: optionalText(newNodeDraft.description),
+      mode: newNodeDraft.mode,
+      post: newNodeDraft.post,
+      hidden: newNodeDraft.hidden,
+      position,
+    };
+
+    setDraftNodeChanges((current) => recordDraftNodeAdd(current, nextChange));
+    setSelectedId(id);
+    setFocusRequestId(id);
+    setNewNodeDraft((current) => ({
+      ...current,
+      id: "",
+      label: "",
+      description: "",
+      post: false,
+      hidden: false,
+    }));
+    setStatus(`已记录新增节点草案：${id}`);
+  }, [draftNodeChanges, newNodeDraft, nodes, plan, selectedId]);
+
+  const updateSelectedDraftNode = useCallback(() => {
+    if (!plan || !selectedId) {
+      setStatus("请选择要编辑的节点。");
+      return;
+    }
+
+    if (selectedId === plan.root) {
+      setStatus("根节点暂不记录结构草案更新。");
+      return;
+    }
+
+    const selectedNode = nodeSnapshotForId(plan, draftNodeChanges, selectedId);
+    if (!selectedNode) {
+      setStatus("所选节点已被删除或不可见。");
+      return;
+    }
+
+    const label = selectedNodeDraft.label.trim();
+    if (!label) {
+      setStatus("节点 label 不能为空。");
+      return;
+    }
+
+    const position = nodes.find((node) => node.id === selectedId)?.position;
+    const nextChange: DraftNodeChange = {
+      action: "update",
+      id: selectedId,
+      label,
+      description: optionalText(selectedNodeDraft.description),
+      mode: selectedNodeDraft.mode,
+      post: selectedNodeDraft.post,
+      hidden: selectedNodeDraft.hidden,
+      position,
+    };
+
+    setDraftNodeChanges((current) => recordDraftNodeUpdate(current, nextChange));
+    setStatus(`已记录节点更新草案：${selectedId}`);
+  }, [draftNodeChanges, nodes, plan, selectedId, selectedNodeDraft]);
+
+  const removeSelectedDraftNode = useCallback(() => {
+    if (!plan || !selectedId) {
+      setStatus("请选择要删除的节点。");
+      return;
+    }
+
+    if (selectedId === plan.root) {
+      setStatus("根节点不能删除。");
+      return;
+    }
+
+    const selectedNode = nodeSnapshotForId(plan, draftNodeChanges, selectedId);
+    if (!selectedNode) {
+      setStatus("所选节点已被删除。");
+      return;
+    }
+
+    setDraftNodeChanges((current) => recordDraftNodeRemove(current, {
+      action: "remove",
+      id: selectedId,
+      label: selectedNode.label,
+      description: selectedNode.description,
+      mode: isDraftNodeMode(selectedNode.mode) ? selectedNode.mode : undefined,
+      post: selectedNode.post,
+      hidden: selectedNode.hidden,
+      position: nodes.find((node) => node.id === selectedId)?.position ?? selectedNode.position,
+    }));
+    setDraftEdgeChanges((current) => current.filter((change) => change.from !== selectedId && change.to !== selectedId));
+    setManualPositions((current) => {
+      const next = new Map(current);
+      next.delete(selectedId);
+      return next;
+    });
+    setSelectedId(plan.root);
+    setStatus(`已记录删除节点草案：${selectedId}`);
+  }, [draftNodeChanges, nodes, plan, selectedId]);
+
   const onNodeDragStop: OnNodeDrag<PlanFlowNode> = useCallback((_event, node) => {
     setNodes((current) => current.map((item) => item.id === node.id ? { ...item, position: node.position } : item));
     setManualPositions((current) => {
@@ -209,6 +407,9 @@ function App() {
       next.set(node.id, node.position);
       return next;
     });
+    setDraftNodeChanges((current) => current.map((change) => (
+      change.action === "add" && change.id === node.id ? { ...change, position: node.position } : change
+    )));
   }, []);
 
   const focusNode = useCallback((id: string) => {
@@ -217,7 +418,7 @@ function App() {
   }, []);
 
   const saveLayout = useCallback(async () => {
-    const positions = Object.fromEntries(nodes.map((node) => [node.id, node.position]));
+    const positions = Object.fromEntries(nodes.filter((node) => Boolean(plan?.nodes[node.id])).map((node) => [node.id, node.position]));
     setStatus("Saving...");
     const response = await fetch("/api/plan", {
       method: "PUT",
@@ -254,24 +455,26 @@ function App() {
       return;
     }
 
-    if (draftEdgeChanges.length === 0) {
+    if (draftChangeCount === 0) {
       setExportText("");
       setStatus("没有草案变更可导出。");
       return;
     }
 
-    const nextExport = buildAgentDraftExport(plan, draftEdgeChanges);
+    const nextExport = buildAgentDraftExport(plan, draftEdgeChanges, draftNodeChanges);
     setExportText(nextExport);
     setStatus("草案导出已生成");
-  }, [draftEdgeChanges, plan]);
+  }, [draftChangeCount, draftEdgeChanges, draftNodeChanges, plan]);
 
   const clearDraft = useCallback(() => {
     setDraftEdgeChanges([]);
+    setDraftNodeChanges([]);
     setExportText("");
     setStatus("草案已清空");
   }, []);
 
   if (!plan) return <div className="loading">Loading Plan Canvas...</div>;
+  const selectedNodeEditDisabled = selectedId === plan.root || !nodeSnapshotForId(plan, draftNodeChanges, selectedId);
 
   return (
     <main id="studio-shell" className={sidebarCollapsed ? "sidebar-collapsed" : ""}>
@@ -332,11 +535,132 @@ function App() {
               ))}
             </select>
           </label>
-          <span className="draft-count" aria-label="Draft change count">草案 {draftEdgeChanges.length}</span>
-          <button data-action="export-draft" onClick={exportDraft} disabled={draftEdgeChanges.length === 0}>导出草案</button>
-          <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftEdgeChanges.length === 0}>清空草案</button>
+          <span className="draft-count" aria-label="Draft change count">草案 {draftChangeCount}</span>
+          <button data-action="export-draft" onClick={exportDraft} disabled={draftChangeCount === 0}>导出草案</button>
+          <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftChangeCount === 0}>清空草案</button>
           <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
           <span className={status.startsWith("Save failed") ? "status status-error" : "status"}>{status}</span>
+        </div>
+        <div className="draft-editor" aria-label="Draft node editor">
+          <section className="draft-editor-section">
+            <h3>新增节点</h3>
+            <label className="draft-field">
+              <span>ID</span>
+              <input
+                data-action="draft-node-id"
+                value={newNodeDraft.id}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, id: event.target.value }))}
+                placeholder="node-id"
+              />
+            </label>
+            <label className="draft-field">
+              <span>Label</span>
+              <input
+                data-action="draft-node-label"
+                value={newNodeDraft.label}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, label: event.target.value }))}
+                placeholder="节点名称"
+              />
+            </label>
+            <label className="draft-field draft-field-wide">
+              <span>Description</span>
+              <input
+                data-action="draft-node-description"
+                value={newNodeDraft.description}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, description: event.target.value }))}
+                placeholder="可选"
+              />
+            </label>
+            <label className="draft-field">
+              <span>Mode</span>
+              <select
+                data-action="draft-node-mode"
+                value={newNodeDraft.mode}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
+              >
+                {draftNodeModes.map((mode) => (
+                  <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="draft-check">
+              <input
+                data-action="draft-node-post"
+                type="checkbox"
+                checked={newNodeDraft.post}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, post: event.target.checked }))}
+              />
+              <span>post</span>
+            </label>
+            <label className="draft-check">
+              <input
+                data-action="draft-node-hidden"
+                type="checkbox"
+                checked={newNodeDraft.hidden}
+                onChange={(event) => setNewNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
+              />
+              <span>hidden</span>
+            </label>
+            <button type="button" className="ghost" data-action="generate-draft-node-id" onClick={generateDraftNodeId}>生成 ID</button>
+            <button type="button" data-action="add-draft-node" onClick={addDraftNode}>添加草案节点</button>
+          </section>
+          <section className="draft-editor-section draft-editor-section-selected">
+            <h3>编辑选中节点</h3>
+            <span className="draft-selected-id">{selectedId}</span>
+            <label className="draft-field">
+              <span>Label</span>
+              <input
+                data-action="draft-node-edit-label"
+                value={selectedNodeDraft.label}
+                disabled={selectedNodeEditDisabled}
+                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, label: event.target.value }))}
+              />
+            </label>
+            <label className="draft-field draft-field-wide">
+              <span>Description</span>
+              <input
+                data-action="draft-node-edit-description"
+                value={selectedNodeDraft.description}
+                disabled={selectedNodeEditDisabled}
+                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, description: event.target.value }))}
+              />
+            </label>
+            <label className="draft-field">
+              <span>Mode</span>
+              <select
+                data-action="draft-node-edit-mode"
+                value={selectedNodeDraft.mode}
+                disabled={selectedNodeEditDisabled}
+                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, mode: event.target.value as DraftNodeMode }))}
+              >
+                {draftNodeModes.map((mode) => (
+                  <option key={mode} value={mode}>{draftNodeModeLabels[mode]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="draft-check">
+              <input
+                data-action="draft-node-edit-post"
+                type="checkbox"
+                checked={selectedNodeDraft.post}
+                disabled={selectedNodeEditDisabled}
+                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, post: event.target.checked }))}
+              />
+              <span>post</span>
+            </label>
+            <label className="draft-check">
+              <input
+                data-action="draft-node-edit-hidden"
+                type="checkbox"
+                checked={selectedNodeDraft.hidden}
+                disabled={selectedNodeEditDisabled}
+                onChange={(event) => setSelectedNodeDraft((current) => ({ ...current, hidden: event.target.checked }))}
+              />
+              <span>hidden</span>
+            </label>
+            <button type="button" data-action="update-draft-node" onClick={updateSelectedDraftNode} disabled={selectedNodeEditDisabled}>更新草案节点</button>
+            <button type="button" className="ghost danger" data-action="remove-draft-node" onClick={removeSelectedDraftNode} disabled={selectedId === plan.root}>删除草案节点</button>
+          </section>
         </div>
         {exportText ? (
           <textarea
@@ -410,13 +734,63 @@ function edgeStyle(type: PlanEdge["type"]) {
   return palette[type];
 }
 
-function buildReactFlowEdges(projectedEdges: StudioProjectedEdge[], draftChanges: DraftEdgeChange[]): Edge[] {
+function applyDraftNodeChangesToGraph(
+  graph: ReturnType<typeof buildStudioGraph>,
+  draftChanges: DraftNodeChange[]
+): DraftStudioGraph {
+  const removedNodeIds = new Set(draftChanges.filter((change) => change.action === "remove").map((change) => change.id));
+  const updateChanges = new Map(draftChanges.filter((change) => change.action === "update").map((change) => [change.id, change]));
+  const nodes: DraftStudioNode[] = graph.nodes
+    .filter((node) => !removedNodeIds.has(node.id))
+    .map((node) => {
+      const update = updateChanges.get(node.id);
+      if (!update) return node;
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          label: update.label ?? node.data.label,
+          description: update.description,
+          mode: update.mode ?? node.data.mode,
+          post: update.post,
+          hidden: update.hidden,
+          draftOperation: "update",
+        },
+      };
+    });
+
+  for (const change of draftChanges) {
+    if (change.action !== "add" || removedNodeIds.has(change.id)) continue;
+    nodes.push({
+      id: change.id,
+      position: change.position ?? { x: 240, y: 240 },
+      data: {
+        id: change.id,
+        label: change.label ?? change.id,
+        description: change.description,
+        kind: "group",
+        mode: change.mode ?? "multi",
+        post: change.post,
+        hidden: change.hidden,
+        draftOperation: "add",
+      },
+    });
+  }
+
+  const visibleNodeIds = new Set(nodes.map((node) => node.id));
+  const edges = graph.edges.filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target));
+  return { nodes, edges, visibleNodeIds };
+}
+
+function buildReactFlowEdges(projectedEdges: StudioProjectedEdge[], draftChanges: DraftEdgeChange[], visibleNodeIds: ReadonlySet<string>): Edge[] {
   const removedKeys = new Set(draftChanges.filter((change) => change.action === "remove").map(edgeChangeKey));
   const baseEdges = projectedEdges
+    .filter((edge) => visibleNodeIds.has(edge.source) && visibleNodeIds.has(edge.target))
     .filter((edge) => !removedKeys.has(edgeKey(edge.source, edge.target, edge.type)))
     .map((edge) => reactFlowEdge(edge));
   const draftAddEdges = draftChanges
     .filter((change) => change.action === "add")
+    .filter((change) => visibleNodeIds.has(change.from) && visibleNodeIds.has(change.to))
     .map((change) => reactFlowEdge({
       id: `draft:${edgeChangeKey(change)}`,
       source: change.from,
@@ -474,19 +848,45 @@ function recordDraftEdgeRemovals(current: DraftEdgeChange[], removedEdges: Edge[
   return next;
 }
 
-function buildAgentDraftExport(plan: StudioPlan, changes: DraftEdgeChange[]): string {
-  const operations = changes.map((change) => ({
+function recordDraftNodeAdd(current: DraftNodeChange[], change: DraftNodeChange): DraftNodeChange[] {
+  if (current.some((item) => item.action === "add" && item.id === change.id)) return current;
+  return [...current.filter((item) => item.id !== change.id), change];
+}
+
+function recordDraftNodeUpdate(current: DraftNodeChange[], change: DraftNodeChange): DraftNodeChange[] {
+  const existingAdd = current.find((item) => item.action === "add" && item.id === change.id);
+  if (existingAdd) {
+    return current.map((item) => item.action === "add" && item.id === change.id ? { ...item, ...change, action: "add" } : item);
+  }
+
+  if (current.some((item) => item.action === "remove" && item.id === change.id)) return current;
+  const withoutExistingUpdate = current.filter((item) => !(item.action === "update" && item.id === change.id));
+  return [...withoutExistingUpdate, change];
+}
+
+function recordDraftNodeRemove(current: DraftNodeChange[], change: DraftNodeChange): DraftNodeChange[] {
+  if (current.some((item) => item.action === "add" && item.id === change.id)) {
+    return current.filter((item) => item.id !== change.id);
+  }
+
+  const withoutExisting = current.filter((item) => item.id !== change.id);
+  return [...withoutExisting, change];
+}
+
+function buildAgentDraftExport(plan: StudioPlan, edgeChanges: DraftEdgeChange[], nodeChanges: DraftNodeChange[]): string {
+  const nodeOperations = nodeChanges.map((change) => nodeOperationForExport(plan, nodeChanges, change));
+  const changedOperations = edgeChanges.map((change) => ({
     action: change.action,
     type: change.type,
     from: change.from,
-    fromLabel: plan.nodes[change.from]?.label,
+    fromLabel: nodeLabelForExport(plan, nodeChanges, change.from),
     to: change.to,
-    toLabel: plan.nodes[change.to]?.label,
+    toLabel: nodeLabelForExport(plan, nodeChanges, change.to),
   }));
-  const dependencyAdds = changes
+  const dependencyAdds = edgeChanges
     .filter((change) => change.action === "add" && change.type === "dependency")
     .map((change) => ({ from: change.from, to: change.to }));
-  const dependencyRemoves = changes
+  const dependencyRemoves = edgeChanges
     .filter((change) => change.action === "remove" && change.type === "dependency")
     .map((change) => ({ from: change.from, to: change.to }));
   const overlayPatchDraft = {
@@ -500,31 +900,127 @@ function buildAgentDraftExport(plan: StudioPlan, changes: DraftEdgeChange[]): st
         }
       : {}),
   };
-  const sourceOnlyOperations = operations.filter((operation) => operation.type !== "dependency");
+  const structureEdgeOperations = changedOperations.filter((operation) => operation.type !== "dependency");
+  const sourceOnlyOperations = {
+    count: nodeOperations.length + structureEdgeOperations.length,
+    nodeOperations,
+    edgeOperations: structureEdgeOperations,
+  };
   const prompt = [
     "你在 /home/rick/desktop/dot 项目工作。",
     "直接执行下面的 Studio 结构修改草案，不要调用 subagent。",
     "不要只修改 Studio layout/positions；请修改真实源码配置，并补测试。",
     "",
     "要求：",
-    "- 根据 changedOperations 修改 configs/dot.yaml 的真实 menu children/mode/post/deps。",
+    "- 根据 nodeOperations 和 changedOperations 修改 configs/dot.yaml 的真实 menu children/mode/post/hidden/deps。",
     "- dependency 类型可参考 overlayPatchDraft，但最终仍应让 build/plan/generator 行为一致。",
-    "- single/multi/flow/post 结构边不能只写 overlay；这些需要源码 YAML 结构调整。",
+    "- single/multi/flow/post 结构边和所有 node add/update/remove 不能只写 overlay；这些需要源码 YAML 结构调整。",
     "- 修改后运行 npm run typecheck、npm run lint、npm test、npm run build。",
     "- 重新生成 dist/dot.sh 并运行 bash -n dist/dot.sh。",
     "",
+    "nodeOperations:",
+    JSON.stringify(nodeOperations, null, 2),
+    "",
     "changedOperations:",
-    JSON.stringify(operations, null, 2),
+    JSON.stringify(changedOperations, null, 2),
     "",
     "overlayPatchDraft:",
     JSON.stringify(overlayPatchDraft, null, 2),
     "",
-    sourceOnlyOperations.length > 0
-      ? `sourceOnlyOperations: ${sourceOnlyOperations.length} structure edge change(s) require YAML edits.`
-      : "sourceOnlyOperations: none.",
+    "sourceOnlyOperations:",
+    JSON.stringify(sourceOnlyOperations, null, 2),
   ].join("\n");
 
   return prompt;
+}
+
+function nodeOperationForExport(plan: StudioPlan, nodeChanges: DraftNodeChange[], change: DraftNodeChange) {
+  const snapshot = change.action === "remove"
+    ? { ...plan.nodes[change.id], ...change }
+    : nodeSnapshotForId(plan, nodeChanges, change.id);
+  const mode = snapshot?.mode;
+
+  return {
+    action: change.action,
+    id: change.id,
+    label: snapshot?.label,
+    description: snapshot?.description,
+    mode: isDraftNodeMode(mode) ? mode : undefined,
+    post: snapshot?.post,
+    hidden: snapshot?.hidden,
+    position: snapshot?.position,
+  };
+}
+
+function nodeLabelForExport(plan: StudioPlan, nodeChanges: DraftNodeChange[], id: string): string | undefined {
+  return nodeSnapshotForId(plan, nodeChanges, id)?.label ?? plan.nodes[id]?.label;
+}
+
+function nodeSnapshotForId(plan: StudioPlan, nodeChanges: DraftNodeChange[], id: string): PlanNode | null {
+  let snapshot = plan.nodes[id] ? { ...plan.nodes[id] } : null;
+
+  for (const change of nodeChanges) {
+    if (change.id !== id) continue;
+    if (change.action === "remove") return null;
+    if (change.action === "add") {
+      snapshot = {
+        id: change.id,
+        label: change.label ?? change.id,
+        description: change.description,
+        kind: "group",
+        mode: change.mode ?? "multi",
+        post: change.post,
+        hidden: change.hidden,
+        position: change.position,
+      };
+      continue;
+    }
+    if (!snapshot) continue;
+    snapshot = {
+      ...snapshot,
+      label: change.label ?? snapshot.label,
+      description: change.description,
+      mode: change.mode ?? snapshot.mode,
+      post: change.post,
+      hidden: change.hidden,
+      position: change.position ?? snapshot.position,
+    };
+  }
+
+  return snapshot;
+}
+
+function nodeExistsForDraft(plan: StudioPlan, nodeChanges: DraftNodeChange[], id: string): boolean {
+  return Boolean(nodeSnapshotForId(plan, nodeChanges, id));
+}
+
+function draftNodePosition(nodes: PlanFlowNode[], selectedId: string, draftCount: number): { x: number; y: number } {
+  const selectedNode = nodes.find((node) => node.id === selectedId);
+  const base = selectedNode?.position ?? { x: 160, y: 160 };
+  return {
+    x: base.x + 340,
+    y: base.y + (draftCount % 4) * 160,
+  };
+}
+
+function optionalText(value: string): string | undefined {
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function normalizeDraftNodeId(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function uniqueDraftNodeId(baseId: string, plan: StudioPlan, nodeChanges: DraftNodeChange[]): string {
+  const fallback = baseId || "draft-node";
+  let candidate = fallback;
+  let index = 2;
+  while (nodeExistsForDraft(plan, nodeChanges, candidate)) {
+    candidate = `${fallback}-${index}`;
+    index += 1;
+  }
+  return candidate;
 }
 
 function edgeSemanticType(edge: Edge): EditableEdgeType | null {
@@ -534,6 +1030,10 @@ function edgeSemanticType(edge: Edge): EditableEdgeType | null {
 
 function isEditableEdgeType(value: unknown): value is EditableEdgeType {
   return typeof value === "string" && editableEdgeTypes.includes(value as EditableEdgeType);
+}
+
+function isDraftNodeMode(value: unknown): value is DraftNodeMode {
+  return typeof value === "string" && draftNodeModes.includes(value as DraftNodeMode);
 }
 
 function edgeChangeKey(change: DraftEdgeChange): string {

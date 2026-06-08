@@ -225,17 +225,29 @@ setNodes(graph.nodes.map(projectedNodeToReactFlowNode));
 setEdges(graph.edges.map(projectedEdgeToReactFlowEdge));
 ```
 
-## Scenario: Studio draft edge handoff contract
+## Scenario: Studio structure draft handoff contract
 
 ### 1. Scope / Trigger
 
-- Trigger: adding local edge editing, deleting, or export affordances in Plan Canvas Studio.
+- Trigger: adding local node/edge editing, deleting, or export affordances in Plan Canvas Studio.
 - Applies to `src/studio/main.tsx`, `src/studio/studio.css`, `tests/studio.test.ts`, and any future Studio export API.
 
 ### 2. Signatures
 
 ```ts
 type EditableEdgeType = "single" | "multi" | "flow" | "dependency" | "post";
+type DraftNodeMode = "single" | "multi" | "flow";
+
+type DraftNodeChange = {
+  action: "add" | "update" | "remove";
+  id: string;
+  label?: string;
+  description?: string;
+  mode?: DraftNodeMode;
+  post?: boolean;
+  hidden?: boolean;
+  position?: { x: number; y: number };
+};
 
 type DraftEdgeChange = {
   action: "add" | "remove";
@@ -245,6 +257,10 @@ type DraftEdgeChange = {
 };
 
 type AgentDraftExport = {
+  nodeOperations: Array<DraftNodeChange & {
+    label?: string;
+    description?: string;
+  }>;
   changedOperations: Array<DraftEdgeChange & {
     fromLabel?: string;
     toLabel?: string;
@@ -256,15 +272,21 @@ type AgentDraftExport = {
       remove?: Array<{ from: string; to: string }>;
     };
   };
-  sourceOnlyOperations: DraftEdgeChange[];
+  sourceOnlyOperations: {
+    count: number;
+    nodeOperations: DraftNodeChange[];
+    edgeOperations: DraftEdgeChange[];
+  };
 };
 ```
 
 ### 3. Contracts
 
-- Studio may let users add/delete edges locally for planning, but those semantic changes must not be sent to `PUT /api/plan`.
+- Studio may let users add/update/remove nodes and add/delete edges locally for planning, but those semantic changes must not be sent to `PUT /api/plan`.
 - `Save layout` remains positions-only and must continue to send `patch: { version: 1, positions }`.
+- `Save layout` must filter out draft-only nodes so the positions overlay does not store nodes that do not exist in source config.
 - Draft export must include only changed operations, never a full plan dump.
+- Draft node operations are always source-only handoff items. They require `configs/*.yaml` edits and tests, not overlay writes.
 - Draft edge types must be explicit; never infer `single`, `multi`, `flow`, `dependency`, or `post` from node coordinates.
 - `dependency` add/remove operations can be represented in `overlayPatchDraft.dependencies`.
 - `single`, `multi`, `flow`, and `post` structure edge changes are source-only handoff items. They require `configs/*.yaml` edits and tests, not just overlay writes.
@@ -274,6 +296,10 @@ type AgentDraftExport = {
 
 | Condition | Expected behavior |
 |-----------|-------------------|
+| User adds a draft node | Add one local `DraftNodeChange` with `action: "add"` and render the node with draft styling |
+| User updates an existing node | Add or replace one `DraftNodeChange` with `action: "update"` and render the changed label/mode locally |
+| User removes an existing node | Add one `DraftNodeChange` with `action: "remove"` and hide connected local edges |
+| User removes a newly added draft node | Remove the matching `add` draft operation instead of exporting add+remove |
 | User connects node A to node B | Add one local `DraftEdgeChange` with the selected explicit edge type |
 | User connects A to A | Reject the draft edge and keep current changes unchanged |
 | User deletes an existing edge | Add one `remove` draft operation for that typed edge |
@@ -284,19 +310,24 @@ type AgentDraftExport = {
 ### 5. Good/Base/Bad Cases
 
 - Good: deleting `zsh-plugins -> zsh-plugin-autosuggestions` as `flow` exports a `remove` operation and tells the agent to edit YAML.
+- Good: adding a new `zsh-recovery-flow` draft node exports it under `nodeOperations` and tells the agent to add it to source YAML.
+- Good: updating `ssh` from `multi` to `flow` exports an `update` node operation and does not write to sidecar overlay.
 - Good: adding `tmux-tpm -> tmux-plugin-catppuccin` as `dependency` appears under `overlayPatchDraft.dependencies.add`.
 - Base: dragging a node changes only layout positions.
 - Bad: exporting the full `InstallationPlan` when only one edge changed.
+- Bad: saving a draft-only node position to `configs/dot.plan.json`.
 - Bad: writing `flow`/`single`/`multi` edge edits directly into sidecar overlay and assuming build output changed safely.
 - Bad: inferring order from x/y coordinates after a drag.
 
 ### 6. Tests Required
 
 - Studio source test: local draft controls exist (`draft-edge-type`, `export-draft`, `clear-draft`).
+- Studio source test: draft node controls exist for add/update/remove and include label/description/mode fields.
 - Studio source test: `onConnect` is wired and node connection is enabled.
 - Studio source test: delete key removes edges while node deletion remains blocked by `onNodesChange` filtering.
-- Studio source test: layout save still contains `patch: { version: 1, positions }`.
-- Studio source test: export text includes `changedOperations`, `overlayPatchDraft`, and `sourceOnlyOperations`.
+- Studio source test: layout save still contains `patch: { version: 1, positions }` and filters draft-only nodes.
+- Studio source test: export text includes `nodeOperations`, `changedOperations`, `overlayPatchDraft`, and `sourceOnlyOperations`.
+- Studio source test: CSS contains a clear draft node style.
 - Build check: `npm run build` must still produce the Studio bundle.
 
 ### 7. Wrong vs Correct
@@ -306,16 +337,18 @@ type AgentDraftExport = {
 ```ts
 await fetch("/api/plan", {
   method: "PUT",
-  body: JSON.stringify({ patch: { version: 2, ordering: inferredFromNodePositions } }),
+  body: JSON.stringify({ patch: { version: 2, nodes: draftNodeChanges, ordering: inferredFromNodePositions } }),
 });
 ```
 
 #### Correct
 
 ```ts
-const change = { action: "add", from, to, type: selectedEdgeType };
-setDraftEdgeChanges((current) => [...current, change]);
-setExportText(buildAgentPrompt([change]));
+const nodeChange = { action: "update", id, label, mode };
+const edgeChange = { action: "add", from, to, type: selectedEdgeType };
+setDraftNodeChanges((current) => recordDraftNodeUpdate(current, nodeChange));
+setDraftEdgeChanges((current) => recordDraftEdgeAdd(current, edgeChange));
+setExportText(buildAgentDraftExport(plan, draftEdgeChanges, draftNodeChanges));
 ```
 
 ## Scenario: Generated prompt type contract

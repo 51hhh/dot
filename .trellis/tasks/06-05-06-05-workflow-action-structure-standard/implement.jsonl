@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Defines current InstallationPlan edge contracts for single, multi, flow, post, and dependency semantics."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Defines one-way config-to-plan-to-generator data flow and required checks for generated script behavior."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Applies because workflow/action structure affects YAML schema, planner, Studio projection, and generated runtime."}
+{"file": ".trellis/tasks/06-02-ssh-one-click-config/research/template-patterns.md", "reason": "Captures existing menu, dependency, post, hidden, and endFlow patterns used by one-click script flows."}

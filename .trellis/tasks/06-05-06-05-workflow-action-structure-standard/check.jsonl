@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Review proposed structure against the current plan edge and Studio projection contracts."}
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Review whether the proposal preserves one-way data flow, deterministic dependency order, and generated script checks."}
+{"file": ".trellis/spec/backend/error-handling.md", "reason": "Review validation and diagnostic boundaries for malformed workflow/action structures."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Review cross-layer consistency from config through generated bash and Studio."}
