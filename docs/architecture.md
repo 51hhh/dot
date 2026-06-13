@@ -4,7 +4,7 @@
 one-way pipeline:
 
 ```text
-Config -> Overlay -> Plan -> Build
+Config -> Validation -> Plan -> Build
 ```
 
 ## Pipeline
@@ -14,6 +14,13 @@ Config -> Overlay -> Plan -> Build
 Config files live under `configs/` and are loaded from YAML or JSON. The loader
 owns structural parsing, Zod validation, and semantic checks such as duplicate
 ids, unknown dependencies, and invalid post-step relationships.
+
+**Schema Constraints** (enforced at load time):
+- Flow nodes must have children
+- Leaf nodes must have script or prompt (unless hidden/container)
+- Parent nodes should declare mode (single/multi/flow)
+- endFlow cannot be set on flow container nodes
+- Post nodes should not have children
 
 Shell snippets referenced by `script` fields are trusted executable inputs. They
 are resolved relative to the config file, not from the process working
