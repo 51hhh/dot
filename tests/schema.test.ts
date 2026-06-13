@@ -4,7 +4,7 @@ import { ConfigSchema } from "../src/loader/schema.js";
 
 const validConfig = {
   name: "test",
-  menu: [{ id: "a", label: "A" }],
+  menu: [{ id: "a", label: "A", script: "a.sh" }],
 };
 
 describe("ConfigSchema", () => {
@@ -27,6 +27,7 @@ describe("ConfigSchema", () => {
         {
           id: "parent",
           label: "Parent",
+          mode: "single",
           children: [
             { id: "child", label: "Child", script: "t.sh", deps: ["parent"], vars: { k: "v" } },
           ],
@@ -46,7 +47,7 @@ describe("ConfigSchema", () => {
           label: "Tmux",
           mode: "flow",
           children: [
-            { id: "tmux-install", label: "Install", mode: "single", children: [{ id: "apt", label: "apt" }] },
+            { id: "tmux-install", label: "Install", mode: "single", children: [{ id: "apt", label: "apt", script: "apt.sh" }] },
             { id: "tmux-header", label: "Header", hidden: true, prompt: { type: "key-compose", var: "custom_prefix", label: "Record key" } },
           ],
         },
@@ -124,7 +125,7 @@ describe("ConfigSchema", () => {
 
   it("rejects shell-unsafe menu ids", () => {
     for (const id of ["bad id", "bad.id", "bad;id", "bad[id]", "bad'id", 'bad"id']) {
-      const config = ConfigSchema.parse({ name: "x", menu: [{ id, label: "Bad" }] });
+      const config = ConfigSchema.parse({ name: "x", menu: [{ id, label: "Bad", script: "bad.sh" }] });
       expect(() => validateConfigSemantics(config)).toThrow(
         new RegExp(`Menu item id "${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}".*letters, digits`)
       );
@@ -135,9 +136,9 @@ describe("ConfigSchema", () => {
     const result = ConfigSchema.parse({
       name: "x",
       menu: [
-        { id: "-leading", label: "Leading" },
-        { id: "trailing_", label: "Trailing" },
-        { id: "A_1-z", label: "Mixed" },
+        { id: "-leading", label: "Leading", script: "a.sh" },
+        { id: "trailing_", label: "Trailing", script: "b.sh" },
+        { id: "A_1-z", label: "Mixed", script: "c.sh" },
       ],
     });
 

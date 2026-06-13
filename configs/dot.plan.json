@@ -1,0 +1,373 @@
+{
+  "version": 2,
+  "positions": {
+    "tmux-prefix-ctrl-a": {
+      "x": 3320,
+      "y": -105
+    },
+    "tmux-prefix-ctrl-b": {
+      "x": 3320,
+      "y": 60
+    },
+    "tmux-install-apt": {
+      "x": 1760,
+      "y": 225
+    },
+    "tmux-prefix-record": {
+      "x": 3320,
+      "y": 225
+    },
+    "tmux-status-minimal": {
+      "x": 4880,
+      "y": 225
+    },
+    "tmux-install-source": {
+      "x": 1760,
+      "y": 390
+    },
+    "tmux-prefix-compose": {
+      "x": 3320,
+      "y": 390
+    },
+    "tmux-status-rich": {
+      "x": 4880,
+      "y": 390
+    },
+    "tmux": {
+      "x": 780,
+      "y": 560
+    },
+    "tmux-install": {
+      "x": 1560,
+      "y": 560
+    },
+    "tmux-github-mirror": {
+      "x": 2340,
+      "y": 560
+    },
+    "tmux-prefix": {
+      "x": 3120,
+      "y": 560
+    },
+    "tmux-plugins": {
+      "x": 3900,
+      "y": 560
+    },
+    "tmux-status": {
+      "x": 4680,
+      "y": 560
+    },
+    "tmux-options": {
+      "x": 5460,
+      "y": 560
+    },
+    "tmux-finalize": {
+      "x": 6240,
+      "y": 560
+    },
+    "tmux-opt-mouse": {
+      "x": 5660,
+      "y": 730
+    },
+    "tmux-opt-vi": {
+      "x": 5950,
+      "y": 730
+    },
+    "tmux-opt-index": {
+      "x": 5660,
+      "y": 895
+    },
+    "tmux-opt-split": {
+      "x": 5950,
+      "y": 895
+    },
+    "tmux-install-recommended": {
+      "x": 1760,
+      "y": 980
+    },
+    "tmux-cleanup-sockets": {
+      "x": 6440,
+      "y": 980
+    },
+    "tmux-opt-reload": {
+      "x": 5660,
+      "y": 1060
+    },
+    "tmux-final-notes": {
+      "x": 6440,
+      "y": 1145
+    },
+    "zsh-zshrc-patch-only": {
+      "x": 6440,
+      "y": 1537
+    },
+    "zsh-zshrc-minimal": {
+      "x": 6440,
+      "y": 1702
+    },
+    "zsh-zshrc-recommended": {
+      "x": 6440,
+      "y": 1867
+    },
+    "zsh-powerlevel10k-github": {
+      "x": 4880,
+      "y": 2527
+    },
+    "zsh-install-apt": {
+      "x": 2540,
+      "y": 2692
+    },
+    "zsh-oh-my-zsh-install": {
+      "x": 4100,
+      "y": 2692
+    },
+    "zsh-powerlevel10k-gitee": {
+      "x": 4880,
+      "y": 2692
+    },
+    "zsh-chsh-default": {
+      "x": 7220,
+      "y": 2692
+    },
+    "zsh-install-skip": {
+      "x": 2540,
+      "y": 2857
+    },
+    "zsh-oh-my-zsh-skip": {
+      "x": 4100,
+      "y": 2857
+    },
+    "zsh-powerlevel10k-skip": {
+      "x": 4880,
+      "y": 2857
+    },
+    "zsh-zshrc-skip": {
+      "x": 6440,
+      "y": 2857
+    },
+    "zsh-chsh-skip": {
+      "x": 7220,
+      "y": 2857
+    },
+    "zsh": {
+      "x": 780,
+      "y": 3027
+    },
+    "zsh-diagnose": {
+      "x": 1560,
+      "y": 3027
+    },
+    "zsh-install": {
+      "x": 2340,
+      "y": 3027
+    },
+    "zsh-recovery": {
+      "x": 3120,
+      "y": 3027
+    },
+    "zsh-oh-my-zsh": {
+      "x": 3900,
+      "y": 3027
+    },
+    "zsh-powerlevel10k": {
+      "x": 4680,
+      "y": 3027
+    },
+    "zsh-plugins": {
+      "x": 5460,
+      "y": 3027
+    },
+    "zsh-zshrc": {
+      "x": 6240,
+      "y": 3027
+    },
+    "zsh-default-shell": {
+      "x": 7020,
+      "y": 3027
+    },
+    "__root": {
+      "x": 0,
+      "y": 3162
+    },
+    "zsh-recovery-diagnose": {
+      "x": 3320,
+      "y": 3197
+    },
+    "zsh-zshrc-restore-backup": {
+      "x": 3610,
+      "y": 3197
+    },
+    "zsh-plugin-autosuggestions": {
+      "x": 5660,
+      "y": 3197
+    },
+    "zsh-chsh-reset-bash": {
+      "x": 3320,
+      "y": 3362
+    },
+    "zsh-uninstall-plugins": {
+      "x": 3610,
+      "y": 3362
+    },
+    "zsh-plugin-syntax-highlighting": {
+      "x": 5660,
+      "y": 3362
+    },
+    "zsh-final-notes": {
+      "x": 7220,
+      "y": 3447
+    },
+    "zsh-uninstall-powerlevel10k": {
+      "x": 3320,
+      "y": 3527
+    },
+    "zsh-uninstall-oh-my-zsh": {
+      "x": 3610,
+      "y": 3527
+    },
+    "zsh-uninstall-apt-remove": {
+      "x": 3320,
+      "y": 3692
+    },
+    "zsh-recovery-final-notes": {
+      "x": 3320,
+      "y": 4022
+    },
+    "ssh-fail2ban-skip": {
+      "x": 1180,
+      "y": 4414
+    },
+    "ssh-fail2ban-install": {
+      "x": 1180,
+      "y": 4579
+    },
+    "ssh-authkeys-skip": {
+      "x": 1180,
+      "y": 4744
+    },
+    "ssh-authkeys-github": {
+      "x": 1180,
+      "y": 4909
+    },
+    "ssh-authkeys-file": {
+      "x": 1180,
+      "y": 5074
+    },
+    "ssh-keygen-skip": {
+      "x": 1180,
+      "y": 5239
+    },
+    "ssh-keygen-rsa": {
+      "x": 1180,
+      "y": 5404
+    },
+    "ssh-ufw-skip": {
+      "x": 1470,
+      "y": 5404
+    },
+    "ssh-keygen-ed25519": {
+      "x": 1180,
+      "y": 5569
+    },
+    "ssh-ufw-enable": {
+      "x": 1470,
+      "y": 5569
+    },
+    "ssh-install-apt": {
+      "x": 1180,
+      "y": 5734
+    },
+    "ssh-hostkey-keep": {
+      "x": 1470,
+      "y": 5734
+    },
+    "ssh": {
+      "x": 780,
+      "y": 5899
+    },
+    "ssh-install-skip": {
+      "x": 1180,
+      "y": 5899
+    },
+    "ssh-hostkey-regen": {
+      "x": 1470,
+      "y": 5899
+    },
+    "ssh-install": {
+      "x": 980,
+      "y": 6069
+    },
+    "ssh-show-pubkey": {
+      "x": 1270,
+      "y": 6069
+    },
+    "ssh-diagnose": {
+      "x": 980,
+      "y": 6234
+    },
+    "ssh-hostkey": {
+      "x": 1270,
+      "y": 6234
+    },
+    "ssh-keygen": {
+      "x": 980,
+      "y": 6399
+    },
+    "ssh-hardening": {
+      "x": 1270,
+      "y": 6399
+    },
+    "ssh-authkeys": {
+      "x": 980,
+      "y": 6564
+    },
+    "ssh-disable-password": {
+      "x": 1470,
+      "y": 6569
+    },
+    "ssh-disable-root": {
+      "x": 1760,
+      "y": 6569
+    },
+    "ssh-fail2ban": {
+      "x": 980,
+      "y": 6729
+    },
+    "ssh-custom-port": {
+      "x": 1470,
+      "y": 6734
+    },
+    "ssh-limit-users": {
+      "x": 1760,
+      "y": 6734
+    },
+    "ssh-crypto-hardening": {
+      "x": 1470,
+      "y": 6899
+    },
+    "ssh-session-hardening": {
+      "x": 1760,
+      "y": 6899
+    },
+    "ssh-final-notes": {
+      "x": 980,
+      "y": 7059
+    },
+    "ssh-client": {
+      "x": 1270,
+      "y": 7059
+    },
+    "ssh-client-config": {
+      "x": 1470,
+      "y": 7229
+    },
+    "ssh-agent-config": {
+      "x": 1470,
+      "y": 7394
+    },
+    "ssh-firewall": {
+      "x": 1270,
+      "y": 7554
+    }
+  }
+}

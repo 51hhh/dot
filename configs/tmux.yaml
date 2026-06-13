@@ -9,6 +9,7 @@ output:
 menu:
   # ── 安装方式 ──
   - id: "tmux-install"
+    mode: "single"
     label: "安装方式"
     description: "选择 Tmux 安装方式"
     children:
@@ -25,6 +26,7 @@ menu:
 
   # ── 前缀键 ──
   - id: "tmux-prefix"
+    mode: "single"
     label: "前缀键"
     description: "选择 Tmux 命令前缀键"
     children:
@@ -48,6 +50,7 @@ menu:
 
   # ── 插件管理 ──
   - id: "tmux-plugins"
+    mode: "multi"
     label: "插件管理"
     description: "TPM 插件管理器及常用插件"
     children:
@@ -90,6 +93,7 @@ menu:
 
   # ── 状态栏 ──
   - id: "tmux-status"
+    mode: "single"
     label: "状态栏风格"
     description: "选择底部状态栏样式"
     children:
@@ -106,6 +110,7 @@ menu:
 
   # ── 基础配置 ──
   - id: "tmux-options"
+    mode: "multi"
     label: "基础配置"
     description: "常用基础选项"
     children:
