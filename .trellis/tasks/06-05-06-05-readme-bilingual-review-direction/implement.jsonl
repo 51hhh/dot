@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "README must reflect generated script and build/test contracts accurately."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Studio and overlay wording must match current Plan Canvas behavior."}

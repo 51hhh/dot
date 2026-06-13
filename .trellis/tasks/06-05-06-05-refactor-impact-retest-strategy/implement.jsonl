@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Assess test scope against generated script quality contracts."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Assess Studio/Plan impact of any future workflow/action model."}

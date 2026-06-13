@@ -3,13 +3,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { loadConfig } from "../src/loader/loader.js";
 import { buildInstallationPlan } from "../src/planner/index.js";
+import { buildWorkflowBoard } from "../src/studio/board.js";
 import { buildStudioGraph } from "../src/studio/projection.js";
 import { isPathInside } from "../src/studio/server.js";
 
 const dotConfig = path.resolve(import.meta.dirname, "../configs/dot.yaml");
-const approxNodeWidth = 260;
+const defaultNodeWidth = 260;
+const roleNodeWidths = {
+  root: 220,
+  module: 230,
+  flow: 260,
+  option: 220,
+  post: 220,
+} as const;
 const approxNodeHeight = 132;
 const minNodeGap = 24;
+
+type StudioGraphNode = ReturnType<typeof buildStudioGraph>["nodes"][number];
+
+function approxNodeWidth(node: StudioGraphNode) {
+  return node.data.canvasRole ? roleNodeWidths[node.data.canvasRole] : defaultNodeWidth;
+}
 
 function graphBounds(graph: ReturnType<typeof buildStudioGraph>) {
   const xs = graph.nodes.map((node) => node.position.x);
@@ -29,10 +43,28 @@ function expectNoProjectedNodeOverlap(graph: ReturnType<typeof buildStudioGraph>
     for (let inner = outer + 1; inner < graph.nodes.length; inner += 1) {
       const a = graph.nodes[outer];
       const b = graph.nodes[inner];
-      const overlapsX = Math.abs(a.position.x - b.position.x) < approxNodeWidth + minNodeGap;
-      const overlapsY = Math.abs(a.position.y - b.position.y) < approxNodeHeight + minNodeGap;
+      const overlapsX = a.position.x < b.position.x + approxNodeWidth(b) + minNodeGap
+        && b.position.x < a.position.x + approxNodeWidth(a) + minNodeGap;
+      const overlapsY = a.position.y < b.position.y + approxNodeHeight + minNodeGap
+        && b.position.y < a.position.y + approxNodeHeight + minNodeGap;
       expect(overlapsX && overlapsY, `${a.id} overlaps ${b.id}`).toBe(false);
     }
+  }
+}
+
+function expectNoBackwardSemanticEdges(graph: ReturnType<typeof buildStudioGraph>) {
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+
+  for (const edge of graph.edges) {
+    if (edge.type === "dependency") continue;
+    const source = nodesById.get(edge.source);
+    const target = nodesById.get(edge.target);
+    expect(source, `missing edge source ${edge.source}`).toBeDefined();
+    expect(target, `missing edge target ${edge.target}`).toBeDefined();
+    expect(
+      target!.position.x,
+      `${edge.source}->${edge.target} should target a node to the right of the source handle`
+    ).toBeGreaterThanOrEqual(source!.position.x + approxNodeWidth(source!) + minNodeGap);
   }
 }
 
@@ -66,33 +98,9 @@ function projectedEdgeSegment(graph: ReturnType<typeof buildStudioGraph>, edge: 
   const target = graph.nodes.find((node) => node.id === edge.target);
   if (!source || !target) return null;
   return {
-    a: { x: source.position.x + approxNodeWidth, y: source.position.y + approxNodeHeight / 2 },
+    a: { x: source.position.x + approxNodeWidth(source), y: source.position.y + approxNodeHeight / 2 },
     b: { x: target.position.x, y: target.position.y + approxNodeHeight / 2 },
   };
-}
-
-function expectNodeInsideStepFrame(
-  graph: ReturnType<typeof buildStudioGraph>,
-  frameId: string,
-  nodeId: string
-) {
-  const frame = graph.nodes.find((node) => node.id === frameId);
-  const node = graph.nodes.find((node) => node.id === nodeId);
-  expect(frame, `missing frame node ${frameId}`).toBeDefined();
-  expect(node, `missing framed node ${nodeId}`).toBeDefined();
-  expect(frame!.data.stepFrame, `${frameId} should have stepFrame data`).toBeDefined();
-
-  const bounds = {
-    left: frame!.position.x + frame!.data.stepFrame!.left,
-    top: frame!.position.y + frame!.data.stepFrame!.top,
-    right: frame!.position.x + frame!.data.stepFrame!.left + frame!.data.stepFrame!.width,
-    bottom: frame!.position.y + frame!.data.stepFrame!.top + frame!.data.stepFrame!.height,
-  };
-
-  expect(node!.position.x, `${nodeId} should be inside ${frameId} horizontally`).toBeGreaterThanOrEqual(bounds.left);
-  expect(node!.position.y, `${nodeId} should be inside ${frameId} vertically`).toBeGreaterThanOrEqual(bounds.top);
-  expect(node!.position.x + approxNodeWidth, `${nodeId} should be inside ${frameId} horizontally`).toBeLessThanOrEqual(bounds.right);
-  expect(node!.position.y + approxNodeHeight, `${nodeId} should be inside ${frameId} vertically`).toBeLessThanOrEqual(bounds.bottom);
 }
 
 function segmentsIntersect(
@@ -127,13 +135,15 @@ describe("studio canvas", () => {
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/main.tsx"), "utf-8");
     const css = fs.readFileSync(path.resolve(import.meta.dirname, "../src/studio/studio.css"), "utf-8");
 
-    expect(source).toContain("buildStudioGraph(plan, { showDependencies, expandedNodeIds })");
+    expect(source).toContain("buildStudioGraph(plan, {");
+    expect(source).toContain("buildWorkflowBoard(plan, { expandedNodeIds })");
+    expect(source).toContain('useState<StudioViewMode>("canvas")');
+    expect(source).toContain('data-action="show-board"');
+    expect(source).toContain('data-action="show-canvas"');
+    expect(source).toContain('data-view="workflow-board"');
     expect(source).toContain("manualPositions");
     expect(source).toContain("focusRequestId");
     expect(source).toContain("badgeForNode(data)");
-    expect(source).toContain("stepFrameStyle(data)");
-    expect(source).toContain("step-frame-summary");
-    expect(source).toContain("aria-label=\"Step frame summary\"");
     expect(source).toContain("badgeForNodeId(node.id, plan)");
     expect(source).toContain("single = exclusive branch");
     expect(source).toContain("multi = selectable independent group");
@@ -146,9 +156,12 @@ describe("studio canvas", () => {
     expect(source).toContain("fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}");
     expect(source).toContain("minZoom={MIN_CANVAS_ZOOM}");
     expect(source).toContain("maxZoom={MAX_CANVAS_ZOOM}");
-    expect(source).toContain('REACT_FLOW_EDGE_TYPE = "straight"');
+    expect(source).toContain('REACT_FLOW_EDGE_TYPE = "smoothstep"');
     expect(source).toContain("type: REACT_FLOW_EDGE_TYPE");
     expect(source).not.toContain('type: "default"');
+    expect(source).toContain("useSavedLayout, setUseSavedLayout");
+    expect(source).toContain('data-action="toggle-saved-layout"');
+    expect(source).toContain("useSavedPositions: useSavedLayout");
     expect(source).toContain("nested-flow-summary");
     expect(source).toContain('data-action="toggle-dependencies"');
     expect(source).toContain('aria-label="Plan diagnostics"');
@@ -161,7 +174,7 @@ describe("studio canvas", () => {
     expect(source).toContain('data-action="toggle-draft-editor"');
     expect(source).toContain("aria-pressed={draftEditorOpen}");
     expect(source).toContain('draftEditorOpen ? "收起结构编辑" : "结构编辑"');
-    expect(source).toContain("{draftEditorOpen ? (");
+    expect(source).toContain('{viewMode === "canvas" && draftEditorOpen ? (');
     expect(source).toContain('data-action="draft-node-id"');
     expect(source).toContain('data-action="draft-node-label"');
     expect(source).toContain('data-action="draft-node-mode"');
@@ -201,14 +214,13 @@ describe("studio canvas", () => {
     expect(source).toContain("visibleNodeIds.has(change.from) && visibleNodeIds.has(change.to)");
     expect(source).not.toContain("0 draft changes");
     expect(source).not.toContain("Add or delete canvas edges locally");
-    expect(source).not.toContain("optionGroups");
     expect(source).not.toContain("postItems");
     expect(source).not.toContain("join-affordance");
     expect(css).toContain(".plan-node-mode-single");
     expect(css).toContain(".plan-node-mode-multi");
     expect(css).toContain(".plan-node-mode-flow");
-    expect(css).toContain(".plan-node-step-frame::before");
-    expect(css).toContain(".step-frame-summary");
+    expect(css).toContain(".plan-node-role-option");
+    expect(css).toContain(".plan-node-role-post");
     expect(css).toContain(".nested-flow-summary");
     expect(css).toContain(".diagnostics-panel");
     expect(css).toContain(".status-error");
@@ -225,6 +237,79 @@ describe("studio canvas", () => {
     expect(css).not.toContain(".option-chip-single");
     expect(css).not.toContain(".option-chip-multi");
     expect(css).not.toContain(".post-list");
+  });
+
+  it("builds the workflow board from semantic plan structure", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const board = buildWorkflowBoard(plan);
+    const tmux = board.modules.find((module) => module.id === "tmux")!;
+    const zsh = board.modules.find((module) => module.id === "zsh")!;
+    const ssh = board.modules.find((module) => module.id === "ssh")!;
+
+    expect(board.root.id).toBe(plan.root);
+    expect(board.modules.map((module) => module.id)).toEqual(["tmux", "zsh", "ssh"]);
+    expect(tmux.steps.map((step) => step.id)).toEqual([
+      "tmux-install",
+      "tmux-github-mirror",
+      "tmux-prefix",
+      "tmux-plugins",
+      "tmux-status",
+      "tmux-options",
+      "tmux-finalize",
+    ]);
+    expect(zsh.steps.map((step) => step.id)).toEqual([
+      "zsh-diagnose",
+      "zsh-install",
+      "zsh-recovery",
+      "zsh-oh-my-zsh",
+      "zsh-powerlevel10k",
+      "zsh-plugins",
+      "zsh-zshrc",
+      "zsh-default-shell",
+    ]);
+    expect(ssh.steps.map((step) => step.id)).toEqual([
+      "ssh-install",
+      "ssh-show-pubkey",
+      "ssh-diagnose",
+      "ssh-hostkey",
+      "ssh-keygen",
+      "ssh-hardening",
+      "ssh-authkeys",
+      "ssh-client",
+      "ssh-fail2ban",
+      "ssh-firewall",
+      "ssh-final-notes",
+    ]);
+  });
+
+  it("keeps Board choices and nested flow summaries under their owning steps", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const collapsed = buildWorkflowBoard(plan);
+    const expanded = buildWorkflowBoard(plan, { expandedNodeIds: new Set(["tmux-plugins"]) });
+    const tmuxInstall = collapsed.modules.find((module) => module.id === "tmux")!.steps.find((step) => step.id === "tmux-install")!;
+    const tmuxPlugins = collapsed.modules.find((module) => module.id === "tmux")!.steps.find((step) => step.id === "tmux-plugins")!;
+    const expandedPlugins = expanded.modules.find((module) => module.id === "tmux")!.steps.find((step) => step.id === "tmux-plugins")!;
+    const installSingle = tmuxInstall.optionGroups.find((group) => group.type === "single")!;
+    const installPost = tmuxInstall.optionGroups.find((group) => group.type === "post")!;
+
+    expect(installSingle.items.map((item) => item.id)).toEqual(["tmux-install-apt", "tmux-install-source"]);
+    expect(installPost.items.map((item) => item.id)).toEqual(["tmux-install-recommended"]);
+    expect(installPost.items[0]!.dependsOn.map((item) => item.id)).toEqual(["tmux-install-apt", "tmux-github-mirror", "tmux-tpm", "tmux-font-jetbrainsmono"]);
+    expect(tmuxPlugins.nestedFlow).toEqual(expect.objectContaining({
+      expanded: false,
+      stepCount: 6,
+      optionCount: 13,
+      postCount: 1,
+      steps: [],
+    }));
+    expect(expandedPlugins.nestedFlow!.steps.map((step) => step.id)).toEqual([
+      "tmux-plugin-foundation",
+      "tmux-plugin-session",
+      "tmux-plugin-productivity",
+      "tmux-plugin-status",
+      "tmux-plugin-themes",
+      "tmux-plugin-navigation",
+    ]);
   });
 
   it("projects the real tmux plan as a seven-step horizontal primary spine", () => {
@@ -281,36 +366,6 @@ describe("studio canvas", () => {
     expect(mouse.position.x).toBeGreaterThan(options.position.x);
   });
 
-  it("projects workflow steps as frames around their local options", () => {
-    const graph = buildStudioGraph(buildInstallationPlan(loadConfig(dotConfig)));
-    const install = graph.nodes.find((node) => node.id === "tmux-install")!;
-    const options = graph.nodes.find((node) => node.id === "tmux-options")!;
-    const finalize = graph.nodes.find((node) => node.id === "tmux-finalize")!;
-
-    expect(install.data.stepFrame).toEqual(expect.objectContaining({
-      singleCount: 2,
-      multiCount: 0,
-      postCount: 1,
-      optionCount: 2,
-    }));
-    expect(options.data.stepFrame).toEqual(expect.objectContaining({
-      singleCount: 0,
-      multiCount: 5,
-      postCount: 0,
-      optionCount: 5,
-    }));
-    expect(finalize.data.stepFrame).toEqual(expect.objectContaining({
-      singleCount: 0,
-      multiCount: 0,
-      postCount: 2,
-      optionCount: 0,
-    }));
-    expectNodeInsideStepFrame(graph, "tmux-install", "tmux-install-apt");
-    expectNodeInsideStepFrame(graph, "tmux-install", "tmux-install-recommended");
-    expectNodeInsideStepFrame(graph, "tmux-options", "tmux-opt-mouse");
-    expectNodeInsideStepFrame(graph, "tmux-finalize", "tmux-final-notes");
-  });
-
   it("projects local lanes without default card overlap", () => {
     const plan = buildInstallationPlan(loadConfig(dotConfig));
     const collapsed = buildStudioGraph(plan);
@@ -324,6 +379,8 @@ describe("studio canvas", () => {
 
     expectNoProjectedNodeOverlap(collapsed);
     expectNoProjectedNodeOverlap(expanded);
+    expectNoBackwardSemanticEdges(collapsed);
+    expectNoBackwardSemanticEdges(expanded);
     expect(installApt.position.x).toBeGreaterThan(install.position.x);
     expect(installApt.position.y).toBeLessThan(install.position.y);
     expect(recommended.position.y).toBeGreaterThan(install.position.y);
@@ -351,7 +408,7 @@ describe("studio canvas", () => {
 
         for (const branch of localBranches) {
           expect(
-            branch.position.x + approxNodeWidth + minNodeGap <= next!.position.x,
+            branch.position.x + approxNodeWidth(branch) + minNodeGap <= next!.position.x,
             `${branch.id} should stay before next spine column ${next!.id}`
           ).toBe(true);
         }
@@ -383,7 +440,7 @@ describe("studio canvas", () => {
       expect(
         Math.abs(target!.position.x - source!.position.x),
         `${edge.source}->${edge.target} should not create a long horizontal span`
-      ).toBeLessThanOrEqual(780);
+      ).toBeLessThanOrEqual(900);
     }
   });
 
@@ -444,6 +501,38 @@ describe("studio canvas", () => {
         `${bands[index]!.id} should start below ${bands[index - 1]!.id}`
       ).toBe(true);
     }
+  });
+
+  it("keeps top-level non-flow module projection compact without fan-out bus edges", () => {
+    const plan = buildInstallationPlan(loadConfig(dotConfig));
+    const graph = buildStudioGraph(plan);
+    const sshChildIds = structureEdgesFrom(plan, "ssh").map((edge) => edge.to);
+    const projectedSshEdges = graph.edges.filter((edge) => edge.source === "ssh");
+    const sshDescendants = collectVisibleDescendants(plan, graph, "ssh");
+    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+    const sshBounds = {
+      minY: Math.min(...sshDescendants.map((node) => node.position.y)),
+      maxY: Math.max(...sshDescendants.map((node) => node.position.y + approxNodeHeight)),
+    };
+
+    expect(sshChildIds.length).toBeGreaterThan(4);
+    expect(graph.nodes.map((node) => node.id)).toEqual(expect.arrayContaining(["ssh", ...sshChildIds]));
+    expect(projectedSshEdges).toEqual([
+      expect.objectContaining({ source: "ssh", target: "ssh-install", type: "multi" }),
+    ]);
+    expect(sshBounds.maxY - sshBounds.minY).toBeLessThanOrEqual(2600);
+    expect(graph.edges).toContainEqual(expect.objectContaining({
+      source: "ssh-install",
+      target: "ssh-install-apt",
+      type: "single",
+    }));
+    expect(graph.edges).toContainEqual(expect.objectContaining({
+      source: "ssh-hardening",
+      target: "ssh-disable-password",
+      type: "multi",
+    }));
+    expect(nodesById.get("ssh-install-apt")!.position.y).toBeGreaterThan(nodesById.get("ssh-install")!.position.y);
+    expect(nodesById.get("ssh-hostkey-regen")!.position.y).toBeGreaterThan(nodesById.get("ssh-hostkey")!.position.y);
   });
 
   it("keeps large terminal option groups in wrapped local columns", () => {
@@ -572,17 +661,20 @@ describe("studio canvas", () => {
     expect(cleanup.position.y).toBeGreaterThan(finalize.position.y);
   });
 
-  it("uses saved positions for every visible node including the root", () => {
+  it("defaults to auto layout but can opt into saved positions", () => {
     const plan = buildInstallationPlan(loadConfig(dotConfig));
     plan.nodes[plan.root] = { ...plan.nodes[plan.root], position: { x: 11, y: 22 } };
     plan.nodes.tmux = { ...plan.nodes.tmux, position: { x: 333, y: 444 } };
     plan.nodes["tmux-prefix-ctrl-a"] = { ...plan.nodes["tmux-prefix-ctrl-a"], position: { x: 555, y: 666 } };
 
-    const graph = buildStudioGraph(plan);
+    const auto = buildStudioGraph(plan);
+    const saved = buildStudioGraph(plan, { useSavedPositions: true });
 
-    expect(graph.nodes.find((node) => node.id === plan.root)!.position).toEqual({ x: 11, y: 22 });
-    expect(graph.nodes.find((node) => node.id === "tmux")!.position).toEqual({ x: 333, y: 444 });
-    expect(graph.nodes.find((node) => node.id === "tmux-prefix-ctrl-a")!.position).toEqual({ x: 555, y: 666 });
+    expect(auto.nodes.find((node) => node.id === plan.root)!.position).not.toEqual({ x: 11, y: 22 });
+    expect(auto.nodes.find((node) => node.id === "tmux")!.position).not.toEqual({ x: 333, y: 444 });
+    expect(saved.nodes.find((node) => node.id === plan.root)!.position).toEqual({ x: 11, y: 22 });
+    expect(saved.nodes.find((node) => node.id === "tmux")!.position).toEqual({ x: 333, y: 444 });
+    expect(saved.nodes.find((node) => node.id === "tmux-prefix-ctrl-a")!.position).toEqual({ x: 555, y: 666 });
   });
 
   it("uses a collapsible tree sidebar without a right inspector", () => {

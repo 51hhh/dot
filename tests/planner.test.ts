@@ -106,7 +106,7 @@ describe("buildInstallationPlan", () => {
       name: "dot",
       version: "1.0",
       menuMode: "single",
-      menu: [{ id: "tmux", label: "Tmux" }],
+      menu: [{ id: "tmux", label: "Tmux", script: "tmux.sh" }],
     };
     const diagnostics = overlayDiagnosticsForConfig({
       version: 2,
@@ -343,6 +343,7 @@ describe("buildInstallationPlan", () => {
           "menu:",
           '  - id: "group"',
           '    label: "Group"',
+          '    mode: "single"',
           '    children:',
           '      - id: "base"',
           '        label: "Base"',
@@ -489,6 +490,7 @@ describe("buildInstallationPlan", () => {
         "menu:",
         "  - id: tmux",
         "    label: Tmux",
+        "    script: tmux.sh",
         "",
       ].join("\n")
     );
@@ -741,6 +743,7 @@ describe("buildInstallationPlan", () => {
         "menu:",
         "  - id: tmux",
         "    label: Tmux",
+        "    mode: single",
         "    children:",
         "      - id: tmux-install-apt",
         "        label: APT",

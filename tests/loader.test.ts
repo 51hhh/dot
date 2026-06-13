@@ -13,7 +13,7 @@ describe("loadConfig", () => {
   it("loads valid YAML", () => {
     const dir = tmpDir();
     const p = path.join(dir, "config.yaml");
-    fs.writeFileSync(p, yaml.dump({ name: "test", menu: [{ id: "a", label: "A" }] }));
+    fs.writeFileSync(p, yaml.dump({ name: "test", menu: [{ id: "a", label: "A", script: "test.sh" }] }));
     const config = loadConfig(p);
     expect(config.name).toBe("test");
     fs.rmSync(dir, { recursive: true });
@@ -22,7 +22,7 @@ describe("loadConfig", () => {
   it("loads valid JSON", () => {
     const dir = tmpDir();
     const p = path.join(dir, "config.json");
-    fs.writeFileSync(p, JSON.stringify({ name: "json", menu: [{ id: "a", label: "A" }] }));
+    fs.writeFileSync(p, JSON.stringify({ name: "json", menu: [{ id: "a", label: "A", script: "test.sh" }] }));
     const config = loadConfig(p);
     expect(config.name).toBe("json");
     fs.rmSync(dir, { recursive: true });
@@ -54,8 +54,8 @@ describe("loadConfig", () => {
     fs.writeFileSync(p, yaml.dump({
       name: "test",
       menu: [
-        { id: "a", label: "A" },
-        { id: "a", label: "A2" },
+        { id: "a", label: "A", script: "a.sh" },
+        { id: "a", label: "A2", script: "a2.sh" },
       ],
     }));
     expect(() => loadConfig(p)).toThrow(/Duplicate/);
@@ -68,8 +68,8 @@ describe("loadConfig", () => {
     fs.writeFileSync(p, yaml.dump({
       name: "test",
       menu: [
-        { id: "parent", label: "P", children: [{ id: "a", label: "A1" }] },
-        { id: "a", label: "A2" },
+        { id: "parent", label: "P", mode: "single", children: [{ id: "a", label: "A1", script: "a1.sh" }] },
+        { id: "a", label: "A2", script: "a2.sh" },
       ],
     }));
     expect(() => loadConfig(p)).toThrow(/Duplicate/);
@@ -81,7 +81,7 @@ describe("loadConfig", () => {
     const p = path.join(dir, "config.yaml");
     fs.writeFileSync(p, yaml.dump({
       name: "test",
-      menu: [{ id: "a", label: "A", deps: ["nonexistent"] }],
+      menu: [{ id: "a", label: "A", script: "a.sh", deps: ["nonexistent"] }],
     }));
     expect(() => loadConfig(p)).toThrow(/unknown item/);
     fs.rmSync(dir, { recursive: true });
@@ -93,8 +93,8 @@ describe("loadConfig", () => {
     fs.writeFileSync(p, yaml.dump({
       name: "test",
       menu: [
-        { id: "a", label: "A", deps: ["b"] },
-        { id: "b", label: "B", post: true },
+        { id: "a", label: "A", script: "a.sh", deps: ["b"] },
+        { id: "b", label: "B", script: "b.sh", post: true },
       ],
     }));
     expect(() => loadConfig(p)).toThrow(/post/);
@@ -107,8 +107,8 @@ describe("loadConfig", () => {
     fs.writeFileSync(p, yaml.dump({
       name: "test",
       menu: [
-        { id: "a", label: "A" },
-        { id: "b", label: "B", post: true, deps: ["a"] },
+        { id: "a", label: "A", script: "a.sh" },
+        { id: "b", label: "B", script: "b.sh", post: true, deps: ["a"] },
       ],
     }));
     const config = loadConfig(p);

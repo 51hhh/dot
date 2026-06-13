@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/quality-guidelines.md", "reason": "Check the proposed retest strategy against project quality expectations."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Check whether visual/plan changes are isolated from script execution."}

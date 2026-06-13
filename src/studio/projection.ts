@@ -15,20 +15,11 @@ export interface StudioNestedFlowSummary {
   postCount: number;
 }
 
-export interface StudioStepFrameSummary {
-  singleCount: number;
-  multiCount: number;
-  postCount: number;
-  optionCount: number;
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
+export type StudioCanvasRole = "root" | "module" | "flow" | "option" | "post";
 
 export interface StudioNodeData extends PlanNode {
   nestedFlow?: StudioNestedFlowSummary;
-  stepFrame?: StudioStepFrameSummary;
+  canvasRole?: StudioCanvasRole;
 }
 
 export interface StudioProjectedNode {
@@ -56,28 +47,38 @@ export interface StudioGraph {
 export interface StudioGraphOptions {
   showDependencies?: boolean;
   expandedNodeIds?: ReadonlySet<string>;
+  useSavedPositions?: boolean;
 }
 
 type IndexedEdge = PlanEdge & { index: number };
 type StructureEdge = IndexedEdge & { type: PlanStructureEdgeType };
 type BranchEdge = StructureEdge & { type: "single" | "multi" | "post" };
+type LocalLanePlacement = "flow" | "stacked";
 
-const SPINE_SPACING = 780;
-const MODULE_START_Y = 560;
+const MODULE_X = 420;
+const MODULE_TO_FIRST_STEP_SPACING = 420;
+const MIN_SPINE_SPACING = 620;
+const MODULE_START_Y = 360;
 const MODULE_GAP = 260;
-const LOCAL_LANE_X_OFFSET = 200;
-const LOCAL_LANE_COLUMN_SPACING = 290;
-const SINGLE_LANE_Y_OFFSET = -170;
-const MULTI_LANE_Y_OFFSET = 170;
-const POST_LANE_Y_OFFSET = 420;
-const LOCAL_NODE_SPACING = 165;
-const NESTED_FLOW_OFFSET = 980;
-const NODE_WIDTH = 260;
+const FLOW_NODE_WIDTH = 260;
+const OPTION_NODE_WIDTH = 220;
+const LOCAL_NODE_GAP = 42;
+const LOCAL_LANE_X_OFFSET = FLOW_NODE_WIDTH + LOCAL_NODE_GAP;
+const LOCAL_LANE_COLUMN_SPACING = 250;
+const SINGLE_LANE_Y_OFFSET = -180;
+const MULTI_LANE_Y_OFFSET = 180;
+const POST_LANE_Y_OFFSET = 360;
+const LOCAL_NODE_SPACING = 160;
+const NESTED_FLOW_OFFSET = 820;
+const MODULE_GRID_COLUMNS = 3;
+const MODULE_GRID_MIN_COLUMN_SPACING = 840;
+const MODULE_GRID_COLUMN_GAP = 48;
+const MODULE_GRID_ITEM_GAP = 180;
 const NODE_HEIGHT = 132;
-const NODE_GAP = 24;
 
 export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOptions = {}): StudioGraph {
   const expandedNodeIds = options.expandedNodeIds ?? new Set<string>();
+  const useSavedPositions = options.useSavedPositions ?? false;
   const structureChildren = new Map<string, StructureEdge[]>();
   const dependencyEdges: IndexedEdge[] = [];
 
@@ -104,6 +105,7 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   const compactNodeIds = new Set<string>();
   const ownerByNodeId = new Map<string, string>();
   const positions = new Map<string, StudioLayoutPoint>();
+  const canvasRoles = new Map<string, StudioCanvasRole>();
   const projectedEdges = new Map<string, StudioProjectedEdge>();
   const primarySpines: Record<string, string[]> = {};
 
@@ -162,13 +164,16 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     return isCollapsibleFlow(id) && expandedNodeIds.has(id);
   }
 
-  function addVisibleNode(id: string, position: StudioLayoutPoint): void {
+  function addVisibleNode(id: string, position: StudioLayoutPoint, role: StudioCanvasRole): void {
     if (!plan.nodes[id]) return;
     visibleNodeIds.add(id);
     compactNodeIds.delete(id);
     ownerByNodeId.set(id, id);
+    if (!canvasRoles.has(id)) {
+      canvasRoles.set(id, role);
+    }
     if (!positions.has(id)) {
-      positions.set(id, plan.nodes[id].position ?? position);
+      positions.set(id, useSavedPositions ? plan.nodes[id].position ?? position : position);
     }
   }
 
@@ -213,71 +218,98 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     });
   }
 
-  function layoutLocalLanes(parentId: string, nested: boolean): void {
+  function layoutLocalLanes(parentId: string, nested: boolean, placement: LocalLanePlacement): void {
     const parentPosition = positions.get(parentId);
     if (!parentPosition) return;
 
     const singleEdges = edgesOfType(parentId, "single");
     const multiEdges = edgesOfType(parentId, "multi");
     const postEdges = edgesOfType(parentId, "post");
-    const multiRows = localLaneRowCount(multiEdges);
+    const singleRows = localLaneRowCount(parentId, singleEdges);
+    const multiRows = localLaneRowCount(parentId, multiEdges);
+
+    if (placement === "stacked") {
+      const singleLaneYOffset = MULTI_LANE_Y_OFFSET;
+      const multiLaneYOffset = singleRows > 0
+        ? singleLaneYOffset + (singleRows + 1) * LOCAL_NODE_SPACING
+        : MULTI_LANE_Y_OFFSET;
+      const postLaneYOffset = multiRows > 0
+        ? multiLaneYOffset + (multiRows + 1) * LOCAL_NODE_SPACING
+        : singleRows > 0
+          ? singleLaneYOffset + (singleRows + 1) * LOCAL_NODE_SPACING
+          : POST_LANE_Y_OFFSET;
+
+      layoutLocalLane(parentId, singleEdges, parentPosition, singleLaneYOffset, nested);
+      layoutLocalLane(parentId, multiEdges, parentPosition, multiLaneYOffset, nested);
+      layoutLocalLane(parentId, postEdges, parentPosition, postLaneYOffset, nested);
+      return;
+    }
+
     const postLaneYOffset = multiRows > 0
       ? MULTI_LANE_Y_OFFSET + (multiRows + 1) * LOCAL_NODE_SPACING
       : POST_LANE_Y_OFFSET;
 
-    layoutLocalLane(parentId, singleEdges, parentPosition, SINGLE_LANE_Y_OFFSET - Math.max(0, singleEdges.length - 1) * LOCAL_NODE_SPACING, nested);
+    layoutLocalLane(parentId, singleEdges, parentPosition, SINGLE_LANE_Y_OFFSET - Math.max(0, singleRows - 1) * LOCAL_NODE_SPACING, nested);
     layoutLocalLane(parentId, multiEdges, parentPosition, MULTI_LANE_Y_OFFSET, nested);
     layoutLocalLane(parentId, postEdges, parentPosition, postLaneYOffset, nested);
   }
 
   function layoutLocalLane(parentId: string, edges: BranchEdge[], parentPosition: StudioLayoutPoint, yOffset: number, nested: boolean): void {
     if (edges.length === 0) return;
-    const columns = localLaneColumnCount(edges);
-    const direction = yOffset < 0 ? -1 : 1;
+    const columns = localLaneColumnCount(parentId, edges);
 
     edges.forEach((edge, index) => {
       const column = index % columns;
       const row = Math.floor(index / columns);
       const x = parentPosition.x + LOCAL_LANE_X_OFFSET + column * LOCAL_LANE_COLUMN_SPACING;
-      let y = parentPosition.y + yOffset + row * LOCAL_NODE_SPACING;
+      const y = parentPosition.y + yOffset + row * LOCAL_NODE_SPACING;
 
-      // Avoid overlap with already-placed nodes at the same X column
-      let attempts = 0;
-      while (attempts < 100) {
-        let overlap = false;
-        for (const pos of positions.values()) {
-          if (Math.abs(pos.x - x) < NODE_WIDTH + NODE_GAP && Math.abs(pos.y - y) < NODE_HEIGHT + NODE_GAP) {
-            overlap = true;
-            break;
-          }
-        }
-        if (!overlap) break;
-        y += direction * LOCAL_NODE_SPACING;
-        attempts++;
-      }
-
-      addVisibleNode(edge.to, { x, y });
+      addVisibleNode(edge.to, { x, y }, edge.type === "post" ? "post" : "option");
       addProjectedEdge(edge, nested);
       layoutVisibleNodeChildren(edge.to, nested);
     });
   }
 
-  function localLaneColumnCount(edges: BranchEdge[]): number {
+  function localLaneColumnCount(parentId: string, edges: BranchEdge[]): number {
     if (edges.length <= 4) return 1;
+    const hasFlowSuccessor = edgesOfType(parentId, "flow").length > 0;
     const terminalEdges = edges.filter((edge) => structureEdgesFrom(edge.to).length === 0);
     if (terminalEdges.length === edges.length) {
-      return Math.min(2, Math.ceil(edges.length / 4));
+      return Math.min(hasFlowSuccessor ? 2 : 3, Math.ceil(edges.length / 4));
     }
     return 2;
   }
 
-  function localLaneRowCount(edges: BranchEdge[]): number {
+  function localLaneRowCount(parentId: string, edges: BranchEdge[]): number {
     if (edges.length === 0) return 0;
-    return Math.ceil(edges.length / localLaneColumnCount(edges));
+    return Math.ceil(edges.length / localLaneColumnCount(parentId, edges));
   }
 
-  function layoutVisibleNodeChildren(id: string, nested: boolean): void {
-    layoutLocalLanes(id, nested);
+  function localLaneMaxColumns(parentId: string): number {
+    return Math.max(
+      1,
+      localLaneColumnCount(parentId, edgesOfType(parentId, "single")),
+      localLaneColumnCount(parentId, edgesOfType(parentId, "multi")),
+      localLaneColumnCount(parentId, edgesOfType(parentId, "post"))
+    );
+  }
+
+  function flowAdvanceFrom(flowRootId: string, currentId: string): number {
+    const baseSpacing = topLevelNodeIds.has(flowRootId) && currentId === flowRootId
+      ? MODULE_TO_FIRST_STEP_SPACING
+      : MIN_SPINE_SPACING;
+    const columns = localLaneMaxColumns(currentId);
+    const localLaneRightEdge = LOCAL_LANE_X_OFFSET + (columns - 1) * LOCAL_LANE_COLUMN_SPACING + OPTION_NODE_WIDTH + LOCAL_NODE_GAP;
+    return Math.max(baseSpacing, localLaneRightEdge);
+  }
+
+  function localLaneBlockWidth(parentId: string): number {
+    const columns = localLaneMaxColumns(parentId);
+    return LOCAL_LANE_X_OFFSET + (columns - 1) * LOCAL_LANE_COLUMN_SPACING + OPTION_NODE_WIDTH;
+  }
+
+  function layoutVisibleNodeChildren(id: string, nested: boolean, placement: LocalLanePlacement = "flow"): void {
+    layoutLocalLanes(id, nested, placement);
     layoutExpandedNestedFlow(id);
     if (isCollapsibleFlow(id) && !isExpandedFlow(id)) {
       for (const childId of localFlowIds(id)) {
@@ -289,20 +321,19 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   function layoutFlowChildren(flowRootId: string, rootX: number, y: number, nested: boolean): void {
     const seen = new Set<string>([flowRootId]);
     let currentId = flowRootId;
-    let column = 1;
 
     while (true) {
       const edge = nextOuterFlowEdge(flowRootId, currentId);
       if (!edge || seen.has(edge.to)) break;
 
-      const x = rootX + column * SPINE_SPACING;
-      addVisibleNode(edge.to, { x, y });
+      const currentPosition = positions.get(currentId) ?? { x: rootX, y };
+      const x = currentPosition.x + flowAdvanceFrom(flowRootId, currentId);
+      addVisibleNode(edge.to, { x, y }, "flow");
       addProjectedEdge(edge, nested);
       layoutVisibleNodeChildren(edge.to, nested);
 
       seen.add(edge.to);
       currentId = edge.to;
-      column += 1;
     }
   }
 
@@ -313,42 +344,70 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     layoutFlowChildren(id, position.x, position.y + NESTED_FLOW_OFFSET, true);
   }
 
+  function layoutTopLevelChoiceGrid(moduleId: string, rootX: number, y: number): void {
+    const edges = structureEdgesFrom(moduleId);
+    if (edges.length === 0) return;
+    const columnBottoms = Array.from({ length: MODULE_GRID_COLUMNS }, () => y);
+    const columnSpacing = Math.max(
+      MODULE_GRID_MIN_COLUMN_SPACING,
+      Math.max(...edges.map((edge) => localLaneBlockWidth(edge.to))) + MODULE_GRID_COLUMN_GAP
+    );
+
+    edges.forEach((edge, index) => {
+      const column = shortestColumnIndex(columnBottoms);
+      const x = rootX + columnSpacing + column * columnSpacing;
+      const childY = columnBottoms[column] ?? y;
+      const childStartIds = new Set(visibleNodeIds);
+      addVisibleNode(edge.to, { x, y: childY }, edge.type === "post" ? "post" : "flow");
+      if (index === 0) {
+        addProjectedEdge(edge);
+      }
+      layoutVisibleNodeChildren(edge.to, false, "stacked");
+      const childIds = [...visibleNodeIds].filter((id) => !childStartIds.has(id));
+      const childBounds = boundsForNodeIds(childIds);
+      columnBottoms[column] = (childBounds?.bottom ?? childY + NODE_HEIGHT) + MODULE_GRID_ITEM_GAP;
+    });
+  }
+
+  function shortestColumnIndex(columnBottoms: number[]): number {
+    let column = 0;
+    for (let index = 1; index < columnBottoms.length; index += 1) {
+      if (columnBottoms[index]! < columnBottoms[column]!) {
+        column = index;
+      }
+    }
+    return column;
+  }
+
   const rootEdges = structureEdgesFrom(plan.root).filter((edge) => edge.type !== "post");
-  addVisibleNode(plan.root, { x: 0, y: MODULE_START_Y });
-  const rootChildPositions: StudioLayoutPoint[] = [];
+  addVisibleNode(plan.root, { x: 0, y: MODULE_START_Y }, "root");
   let nextModuleY = MODULE_START_Y;
   let nextModuleMinY = Number.NEGATIVE_INFINITY;
   rootEdges.forEach((edge) => {
     const moduleStartIds = new Set(visibleNodeIds);
     const y = nextModuleY;
-    addVisibleNode(edge.to, { x: SPINE_SPACING, y });
-    addProjectedEdge(edge);
-    layoutVisibleNodeChildren(edge.to, false);
+    addVisibleNode(edge.to, { x: MODULE_X, y }, "module");
     if (plan.nodes[edge.to]?.mode === "flow") {
+      layoutVisibleNodeChildren(edge.to, false);
       primarySpines[edge.to] = collectFlowSpineIds(edge.to);
-      layoutFlowChildren(edge.to, SPINE_SPACING, y, false);
+      layoutFlowChildren(edge.to, MODULE_X, y, false);
+    } else {
+      layoutTopLevelChoiceGrid(edge.to, MODULE_X, y);
     }
 
     const moduleIds = [...visibleNodeIds].filter((id) => !moduleStartIds.has(id));
     const moduleBounds = boundsForNodeIds(moduleIds);
-    const moduleHasSavedPositions = moduleIds.some((id) => Boolean(plan.nodes[id]?.position));
+    const moduleHasSavedPositions = useSavedPositions && moduleIds.some((id) => Boolean(plan.nodes[id]?.position));
     if (moduleBounds && !moduleHasSavedPositions && moduleBounds.top < nextModuleMinY) {
       translateNodeIds(moduleIds, nextModuleMinY - moduleBounds.top);
     }
 
     const shiftedBounds = boundsForNodeIds(moduleIds);
-    const rootChildPosition = positions.get(edge.to);
-    if (rootChildPosition) rootChildPositions.push(rootChildPosition);
     if (shiftedBounds) {
       nextModuleMinY = shiftedBounds.bottom + MODULE_GAP;
       nextModuleY = nextModuleMinY;
     }
   });
-
-  if (rootEdges.length > 0 && !plan.nodes[plan.root]?.position) {
-    const averageChildY = rootChildPositions.reduce((sum, position) => sum + position.y, 0) / rootChildPositions.length;
-    positions.set(plan.root, { x: 0, y: averageChildY });
-  }
 
   if (options.showDependencies) {
     for (const edge of dependencyEdges) {
@@ -385,7 +444,6 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
   function buildStudioNodeData(id: string): StudioNodeData {
     const node = plan.nodes[id];
     const nestedIds = localFlowIds(id);
-    const stepFrame = buildStepFrameData(id);
     const nestedFlow = isCollapsibleFlow(id)
       ? {
           expanded: isExpandedFlow(id),
@@ -398,43 +456,7 @@ export function buildStudioGraph(plan: InstallationPlan, options: StudioGraphOpt
     return {
       ...node,
       nestedFlow,
-      stepFrame,
-    };
-  }
-
-  function buildStepFrameData(id: string): StudioStepFrameSummary | undefined {
-    if (id === plan.root) return undefined;
-    const localEdges = localLaneEdges(id).filter((edge) => visibleNodeIds.has(edge.to));
-    if (localEdges.length === 0) return undefined;
-
-    const parentPosition = positions.get(id);
-    if (!parentPosition) return undefined;
-
-    const childRects = localEdges
-      .map((edge) => positions.get(edge.to))
-      .filter((position): position is StudioLayoutPoint => Boolean(position))
-      .map((position) => ({
-        left: position.x - parentPosition.x,
-        top: position.y - parentPosition.y,
-        right: position.x - parentPosition.x + NODE_WIDTH,
-        bottom: position.y - parentPosition.y + NODE_HEIGHT,
-      }));
-    if (childRects.length === 0) return undefined;
-
-    const left = Math.min(0, ...childRects.map((rect) => rect.left)) - 28;
-    const top = Math.min(0, ...childRects.map((rect) => rect.top)) - 44;
-    const right = Math.max(NODE_WIDTH, ...childRects.map((rect) => rect.right)) + 28;
-    const bottom = Math.max(NODE_HEIGHT, ...childRects.map((rect) => rect.bottom)) + 28;
-
-    return {
-      singleCount: localEdges.filter((edge) => edge.type === "single").length,
-      multiCount: localEdges.filter((edge) => edge.type === "multi").length,
-      postCount: localEdges.filter((edge) => edge.type === "post").length,
-      optionCount: localEdges.filter((edge) => edge.type !== "post").length,
-      left,
-      top,
-      width: right - left,
-      height: bottom - top,
+      canvasRole: canvasRoles.get(id),
     };
   }
 }

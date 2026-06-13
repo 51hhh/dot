@@ -118,6 +118,104 @@ for (const child of flow.children) {
 }
 ```
 
+## Scenario: Studio Workflow Board projection contract
+
+### 1. Scope / Trigger
+
+- Trigger: changing Studio default overview, `buildWorkflowBoard`, Board rendering, nested flow expansion, or dependency display in the Board.
+- Applies to `src/studio/board.ts`, `src/studio/main.tsx`, `src/studio/studio.css`, and `tests/studio.test.ts`.
+
+### 2. Signatures
+
+```ts
+export interface WorkflowBoard {
+  root: WorkflowBoardItem;
+  modules: WorkflowBoardModule[];
+}
+
+export interface WorkflowBoardModule extends WorkflowBoardItem {
+  steps: WorkflowBoardStep[];
+  stepCount: number;
+  optionCount: number;
+  postCount: number;
+  dependencyCount: number;
+}
+
+export interface WorkflowBoardStep extends WorkflowBoardItem {
+  index: number;
+  optionGroups: WorkflowBoardOptionGroup[];
+  nestedFlow?: WorkflowBoardNestedFlow;
+}
+
+export function buildWorkflowBoard(
+  plan: InstallationPlan,
+  options?: { expandedNodeIds?: ReadonlySet<string> }
+): WorkflowBoard;
+```
+
+### 3. Contracts
+
+- Studio defaults to `viewMode === "canvas"` so the editable graph remains the first surface; Workflow Board is an explicit reading view.
+- Board projection reads only `InstallationPlan.nodes` and semantic `InstallationPlan.edges`.
+- Board projection must not read saved canvas positions and must not depend on React Flow node coordinates.
+- Root is represented as board metadata, not as a module or step.
+- Top-level root structure children become Board modules in plan order.
+- A top-level `mode: "flow"` module lists the visible outer flow spine as ordered steps.
+- A top-level non-flow module lists direct `single`, `multi`, and module-level `post` children as steps, so quick-action modules keep final notes visible.
+- Step-local `single`, `multi`, and `post` edges become option groups under the owning step.
+- Dependency edges become dependency chips on the affected Board items; hidden dependency nodes may appear as hidden dependency chips.
+- A nested `kind: "group"` + `mode: "flow"` node is summarized by default and expands in place when its id is present in `expandedNodeIds`.
+- Board rendering and Canvas rendering share selection state, but Board must not mutate layout overlays.
+
+### 4. Validation & Error Matrix
+
+| Condition | Expected behavior |
+|-----------|-------------------|
+| Real config root has `tmux`, `zsh`, `ssh` | Board modules are `tmux`, `zsh`, `ssh` in order |
+| Real `tmux` flow is projected | Board steps are the seven macro steps from install through finalize |
+| Real `zsh` has a top-level post final note | The final note appears in the owning step post group, not as a main flow step |
+| Real `ssh` is a non-flow module with a module-level post node | The final note remains visible as a Board step |
+| `tmux-plugins` is collapsed | Board shows nested flow summary and no nested step list |
+| `tmux-plugins` is expanded | Board shows plugin substeps in local order under the plugin step |
+| Item has dependency on hidden node | Board dependency chip marks that dependency as hidden |
+| Saved positions are stale or offscreen | Board order and grouping do not change |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `tmux-install` shows `apt` and `source` under a single-choice group, and `tmux-install-recommended` under post actions with its dependencies.
+- Good: `tmux-plugins` shows `6 子步骤`, `13 选项`, and expands to plugin groups on demand.
+- Base: selecting an item in Board updates the shared selected node id.
+- Base: switching between Canvas and Board keeps selection and nested-flow expansion state.
+- Bad: requiring low canvas zoom to understand the default overview.
+- Bad: showing only React Flow node frames as the default page.
+- Bad: hiding module-level post nodes in non-flow quick-action modules.
+- Bad: inferring Board step order from `position.x` or `position.y`.
+
+### 6. Tests Required
+
+- Studio source test: default state is `useState<StudioViewMode>("canvas")` and includes Board/Canvas view controls.
+- Studio Board test: real config modules are `tmux`, `zsh`, `ssh`.
+- Studio Board test: real `tmux` steps match the semantic flow spine.
+- Studio Board test: real `zsh` and `ssh` post handling matches the contracts above.
+- Studio Board test: choice groups, post actions, dependency chips, hidden dependency flags, and nested flow expansion are derived correctly.
+- Build check: `npm run build` must still produce the Studio bundle.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const boardSteps = graph.nodes
+  .filter((node) => node.data.kind === "group")
+  .sort((a, b) => a.position.x - b.position.x);
+```
+
+#### Correct
+
+```ts
+const board = buildWorkflowBoard(plan, { expandedNodeIds });
+```
+
 ## Scenario: Studio flow spine projection contract
 
 ### 1. Scope / Trigger
@@ -141,7 +239,6 @@ export function buildStudioGraph(
 
 - `InstallationPlan` remains the semantic source of truth; Studio may project it into a display-specific graph without changing generator behavior.
 - Primary `flow` chains render as horizontal spines.
-- A visible workflow step that owns `single`, `multi`, or `post` children should expose `data.stepFrame` so the renderer can draw a bounded step frame around local options.
 - `single` children render as real visible draggable nodes in a local lane near their parent, connected by visible `single` edges.
 - `multi` children render as real visible draggable nodes in a local lane near their parent, connected by visible `multi` edges.
 - Post children render as real visible draggable nodes near their owning step, connected by visible `post` edges, but they do not enter or advance the main flow spine.
@@ -150,9 +247,15 @@ export function buildStudioGraph(
 - Nested flows such as `tmux-plugins` are collapsed by default and expand only when their id is present in `expandedNodeIds`.
 - Expanded nested-flow nodes and their single/multi/post children render as real visible draggable nodes and edges.
 - Studio nodes must keep `targetPosition: Position.Left` and `sourcePosition: Position.Right`.
-- React Flow edges should use an explicit straight edge type for Plan Canvas semantic edges; avoid default Bezier routing because compact same-source branches form misleading arcs.
+- React Flow edges should use an explicit `smoothstep` edge type for Plan Canvas semantic edges; avoid default Bezier routing because compact same-source branches form misleading arcs.
 - Studio projection renders the full visible graph by default; do not collapse top-level tools just because a node is selected.
+- Studio projection defaults to automatic positions even when a sidecar overlay contains saved positions; saved positions apply only when `useSavedPositions` is true.
+- Root-to-module structure edges may be omitted from the default projection to avoid long unreadable bus lines.
+- Top-level non-flow modules lay out direct children in a wrapped module grid instead of treating them as local option branches.
+- Top-level non-flow module-to-child structure edges may be summarized to a single module-entry edge to avoid large multi-edge bus lines; child nodes remain visible in compact wrapped columns and child-local structure edges remain visible.
+- Direct children inside top-level non-flow module grids stack local single/multi/post lanes below the child card, instead of placing single lanes above as flow-spine nodes do.
 - Local single/multi/post branch columns must not visually intrude into the next primary flow column.
+- Visible semantic edges must not route backward: the target node's left handle must sit after the source node's right handle plus a gap.
 - Large terminal option groups should wrap into local columns instead of forming one long vertical stack.
 - Post lane placement after wrapped local groups must use wrapped row count, not raw option count, so post edges do not become long vertical drops.
 - Primary flow spacing should remain compact enough for readable overview; root and flow structure edges should not create large horizontal spans.
@@ -164,16 +267,19 @@ export function buildStudioGraph(
 | Condition | Expected behavior |
 |-----------|-------------------|
 | Real tmux plan is projected | `primarySpines.tmux` is the seven visible tmux macro steps |
-| Flow step owns local single/multi/post options | The step node includes `data.stepFrame` with option counts and frame bounds that contain its local option nodes |
 | Single/multi children exist under a visible step | Children appear as projected nodes and visible `single` / `multi` edges |
 | `showDependencies` is false or omitted | No projected edge has `type === "dependency"` |
 | `showDependencies` is true | Dependency edges are dashed/low emphasis and connect visible owner nodes |
 | Flow child has its own local flow | It is collapsed by default and represented by `data.nestedFlow` |
 | Flow child is expanded | Its local flow nodes render below/near the parent with `nested: true` edges |
 | Post children exist under a step | They appear as projected nodes and visible `post` edges, outside `primarySpines` |
-| Semantic edge is converted to React Flow | The rendered edge type is explicitly `straight`, not default Bezier |
-| Local branch node sits before the next flow step | Its right edge plus node gap is less than or equal to the next flow column x position |
+| Semantic edge is converted to React Flow | The rendered edge type is explicitly `smoothstep`, not default Bezier |
+| Local branch is rendered above or below its parent | Target x still starts after the parent card's right handle, so smoothstep does not backtrack |
 | Terminal option group has more than four choices | Choices wrap into multiple local columns |
+| Top-level non-flow module has many children | Direct children render in a wrapped module grid with enough row spacing for their local options |
+| Top-level non-flow module is projected | Direct module-to-child bus edges are reduced to one entry edge, child nodes stay compactly grouped, and child-local single/multi/post edges remain visible |
+| Top-level non-flow child owns single options | Its local options render below the child card, avoiding overlap with the previous grid item |
+| Saved overlay positions exist | Canvas still opens in automatic layout unless saved-layout mode is enabled |
 | Wrapped local group has post child | Post child sits near the wrapped rows instead of after every raw option slot |
 | Full real config graph is projected | Collapsed and expanded graph widths stay under explicit regression bounds |
 | Root or flow structure edge is projected | Horizontal edge span stays under the compact layout bound |
@@ -183,7 +289,6 @@ export function buildStudioGraph(
 ### 5. Good/Base/Bad Cases
 
 - Good: `tmux -> tmux-install -> tmux-github-mirror -> tmux-prefix -> tmux-plugins -> tmux-status -> tmux-options -> tmux-finalize` reads as one horizontal spine.
-- Good: `tmux-install` is rendered as the install-method step frame, and `apt`, `source`, and the recommended shortcut are grouped inside that frame.
 - Base: `tmux-prefix` displays Ctrl+A/Ctrl+B/custom choices as draggable option nodes near the prefix step.
 - Base: `tmux-options` displays option choices as draggable option nodes near the options step.
 - Base: `tmux-plugins` shows a collapsed nested-flow summary until expanded.
@@ -193,24 +298,24 @@ export function buildStudioGraph(
 - Bad: post nodes create normal flow branches that suggest they run before the next macro step.
 - Bad: a large terminal option group forms one long vertical stack.
 - Bad: local option cards overlap or occupy the same visual column as the next flow step.
-- Bad: making option nodes look like first-class workflow steps instead of grouping them under their owning step.
 
 ### 6. Tests Required
 
 - Studio projection test: real tmux primary spine is the seven macro steps.
-- Studio projection test: workflow steps with local options expose `data.stepFrame`, and their option nodes sit inside the frame bounds.
 - Studio projection test: single/multi options render as visible nodes with typed edges.
 - Studio projection test: dependencies are hidden by default and toggled on explicitly.
 - Studio projection test: nested `tmux-plugins` flow is collapsed by default and expands locally.
 - Studio projection test: post nodes render visibly but stay out of the main spine.
-- Studio shell test: semantic edges use explicit straight React Flow edges, not the default Bezier type.
+- Studio shell test: semantic edges use explicit `smoothstep` React Flow edges, not the default Bezier type.
 - Studio projection test: branch columns stay clear of the next primary flow column.
+- Studio projection test: visible semantic edges never target a node to the left of the source handle.
 - Studio projection test: large terminal option groups wrap into multiple columns.
 - Studio projection test: post nodes stay near wrapped local lanes instead of using raw option count.
 - Studio projection test: collapsed and expanded real config widths stay bounded.
 - Studio projection test: root and flow structure edges stay horizontally compact.
 - Studio projection test: primary flow edges do not cross unrelated local branch edges.
 - Studio projection test: expanded top-level modules occupy separate vertical bands.
+- Studio projection test: top-level non-flow module bus edges are reduced to one entry edge while child nodes stay compactly grouped and child-local edges stay visible.
 - Build check: `npm run build` must still produce the Studio bundle.
 
 ### 7. Wrong vs Correct

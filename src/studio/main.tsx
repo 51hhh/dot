@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Background,
@@ -19,6 +19,14 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { type InstallationPlan, type PlanEdge, type PlanNode } from "../planner/types.js";
+import {
+  buildWorkflowBoard,
+  type WorkflowBoard,
+  type WorkflowBoardItem,
+  type WorkflowBoardModule,
+  type WorkflowBoardOptionGroup,
+  type WorkflowBoardStep,
+} from "./board.js";
 import { buildStudioGraph, type StudioNodeData, type StudioProjectedEdge, type StudioProjectedNode } from "./projection.js";
 import "./studio.css";
 
@@ -93,16 +101,16 @@ const draftNodeModeLabels: Record<DraftNodeMode, string> = {
 const MIN_CANVAS_ZOOM = 0.05;
 const MAX_CANVAS_ZOOM = 2;
 const CANVAS_FIT_VIEW_OPTIONS = { padding: 0.08, minZoom: MIN_CANVAS_ZOOM, maxZoom: 0.85 };
-const REACT_FLOW_EDGE_TYPE = "straight";
+const REACT_FLOW_EDGE_TYPE = "smoothstep";
+type StudioViewMode = "board" | "canvas";
 
 function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
   const badge = badgeForNode(data);
   const draftClass = data.draftOperation ? ` plan-node-draft plan-node-draft-${data.draftOperation}` : "";
-  const stepFrameClass = data.stepFrame ? " plan-node-step-frame" : "";
+  const roleClass = data.canvasRole ? ` plan-node-role-${data.canvasRole}` : "";
   return (
     <div
-      className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode}${draftClass}${stepFrameClass} ${selected ? "selected" : ""}`}
-      style={stepFrameStyle(data)}
+      className={`plan-node plan-node-${data.kind} plan-node-mode-${badge.mode}${roleClass}${draftClass} ${selected ? "selected" : ""}`}
       onClick={() => data.onSelect(id)}
     >
       <Handle type="target" position={Position.Left} className="plan-handle plan-handle-target" />
@@ -111,14 +119,6 @@ function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
         <span className={`mode-badge mode-badge-${badge.mode}`} title={badge.title}>{badge.label}</span>
       </div>
       <small>{id} · {data.kind}{data.post ? " · post" : ""}{data.hidden ? " · hidden" : ""}{data.draftOperation ? ` · draft ${data.draftOperation}` : ""}</small>
-      {data.stepFrame ? (
-        <div className="step-frame-summary" aria-label="Step frame summary">
-          <span>{data.stepFrame.optionCount} 选项</span>
-          {data.stepFrame.singleCount > 0 ? <span>{data.stepFrame.singleCount} 单选</span> : null}
-          {data.stepFrame.multiCount > 0 ? <span>{data.stepFrame.multiCount} 多选</span> : null}
-          {data.stepFrame.postCount > 0 ? <span>{data.stepFrame.postCount} 后置</span> : null}
-        </div>
-      ) : null}
       {data.description ? <p className="node-description">{data.description}</p> : null}
       {data.nestedFlow ? (
         <div className="nested-flow-summary">
@@ -143,6 +143,256 @@ function PlanNodeView({ id, data, selected }: NodeProps<PlanFlowNode>) {
 
 const nodeTypes = { planNode: PlanNodeView };
 
+function WorkflowBoardView({
+  board,
+  selectedId,
+  onSelect,
+  onToggleExpand,
+}: {
+  board: WorkflowBoard;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onToggleExpand: (id: string) => void;
+}) {
+  return (
+    <div className="workflow-board" data-view="workflow-board">
+      <header className="workflow-board-header">
+        <div>
+          <span className="workflow-eyebrow">Workflow Board</span>
+          <h1>{board.root.label}</h1>
+          {board.root.description ? <p>{board.root.description}</p> : null}
+        </div>
+        <div className="workflow-board-stats" aria-label="Workflow board summary">
+          <span>{board.modules.length} 项目</span>
+          <span>{board.modules.reduce((sum, module) => sum + module.stepCount, 0)} 步骤</span>
+          <span>{board.modules.reduce((sum, module) => sum + module.optionCount, 0)} 选项</span>
+          <span>{board.modules.reduce((sum, module) => sum + module.postCount, 0)} 后置</span>
+        </div>
+      </header>
+      <div className="workflow-module-list">
+        {board.modules.map((module, index) => (
+          <WorkflowModuleSection
+            key={module.id}
+            module={module}
+            index={index + 1}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onToggleExpand={onToggleExpand}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WorkflowModuleSection({
+  module,
+  index,
+  selectedId,
+  onSelect,
+  onToggleExpand,
+}: {
+  module: WorkflowBoardModule;
+  index: number;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onToggleExpand: (id: string) => void;
+}) {
+  const badge = displayBadgeForBoardItem(module);
+  return (
+    <section className={`workflow-module ${module.id === selectedId ? "active" : ""}`} data-module-id={module.id}>
+      <header className="workflow-module-header">
+        <button type="button" className="workflow-module-title" onClick={() => onSelect(module.id)}>
+          <span className="workflow-index">{index}</span>
+          <span>
+            <strong>{module.label}</strong>
+            <small>{module.id}</small>
+          </span>
+          <span className={`mode-badge mode-badge-${badge.mode}`}>{badge.label}</span>
+        </button>
+        <div className="workflow-module-stats">
+          <span>{module.stepCount} 步骤</span>
+          <span>{module.optionCount} 选项</span>
+          {module.postCount > 0 ? <span>{module.postCount} 后置</span> : null}
+          {module.dependencyCount > 0 ? <span>{module.dependencyCount} 依赖</span> : null}
+        </div>
+      </header>
+      {module.description ? <p className="workflow-module-description">{module.description}</p> : null}
+      <div className="workflow-step-list">
+        {module.steps.map((step) => (
+          <WorkflowStepCard
+            key={step.id}
+            step={step}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            onToggleExpand={onToggleExpand}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowStepCard({
+  step,
+  selectedId,
+  onSelect,
+  onToggleExpand,
+}: {
+  step: WorkflowBoardStep;
+  selectedId: string;
+  onSelect: (id: string) => void;
+  onToggleExpand: (id: string) => void;
+}) {
+  const badge = displayBadgeForBoardItem(step);
+  return (
+    <article className={`workflow-step ${step.id === selectedId ? "active" : ""}`} data-step-id={step.id}>
+      <button type="button" className="workflow-step-main" onClick={() => onSelect(step.id)}>
+        <span className="workflow-step-number">{step.index}</span>
+        <span className="workflow-step-copy">
+          <span className="workflow-step-title">
+            <strong>{step.label}</strong>
+            <span className={`mode-badge mode-badge-${badge.mode}`}>{badge.label}</span>
+            {step.post ? <span className="workflow-flag">post</span> : null}
+            {step.hidden ? <span className="workflow-flag">hidden</span> : null}
+          </span>
+          <small>{step.id} · {step.kind}{step.script ? " · script" : ""}{step.prompt ? " · prompt" : ""}</small>
+          {step.description ? <span className="workflow-description">{step.description}</span> : null}
+        </span>
+      </button>
+      <WorkflowDependencyPills item={step} onSelect={onSelect} />
+      {step.optionGroups.length > 0 ? (
+        <div className="workflow-option-groups">
+          {step.optionGroups.map((group) => (
+            <WorkflowOptionGroupView
+              key={`${step.id}-${group.type}`}
+              group={group}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ))}
+        </div>
+      ) : (
+        <p className="workflow-empty">此步骤是直接执行动作。</p>
+      )}
+      {step.nestedFlow ? (
+        <section className="workflow-nested" aria-label={`${step.label} nested flow`}>
+          <div className="workflow-nested-summary">
+            <button type="button" className="ghost" data-action="toggle-board-nested-flow" onClick={() => onToggleExpand(step.id)}>
+              {step.nestedFlow.expanded ? "折叠子流程" : "展开子流程"}
+            </button>
+            <span>{step.nestedFlow.stepCount} 子步骤</span>
+            <span>{step.nestedFlow.optionCount} 选项</span>
+            {step.nestedFlow.postCount > 0 ? <span>{step.nestedFlow.postCount} 后置</span> : null}
+          </div>
+          {step.nestedFlow.expanded ? (
+            <div className="workflow-nested-steps">
+              {step.nestedFlow.steps.map((nestedStep) => (
+                <WorkflowStepCard
+                  key={nestedStep.id}
+                  step={nestedStep}
+                  selectedId={selectedId}
+                  onSelect={onSelect}
+                  onToggleExpand={onToggleExpand}
+                />
+              ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+    </article>
+  );
+}
+
+function WorkflowOptionGroupView({
+  group,
+  selectedId,
+  onSelect,
+}: {
+  group: WorkflowBoardOptionGroup;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <section className={`workflow-option-group workflow-option-group-${group.type}`}>
+      <div className="workflow-option-group-header">
+        <strong>{group.label}</strong>
+        <span>{group.items.length}</span>
+      </div>
+      <p>{group.description}</p>
+      <div className="workflow-option-grid">
+        {group.items.map((item) => (
+          <WorkflowItemButton key={item.id} item={item} selectedId={selectedId} onSelect={onSelect} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function WorkflowItemButton({
+  item,
+  selectedId,
+  onSelect,
+}: {
+  item: WorkflowBoardItem;
+  selectedId: string;
+  onSelect: (id: string) => void;
+}) {
+  const badge = displayBadgeForBoardItem(item);
+  return (
+    <button
+      type="button"
+      className={`workflow-item workflow-item-${item.role} ${item.id === selectedId ? "active" : ""}`}
+      onClick={() => onSelect(item.id)}
+      title={item.label}
+    >
+      <span className="workflow-item-title">
+        <strong>{item.label}</strong>
+        <span className={`mode-badge mode-badge-${badge.mode}`}>{badge.label}</span>
+      </span>
+      <small>{item.id}{item.hidden ? " · hidden" : ""}{item.post ? " · post" : ""}{item.prompt ? " · prompt" : ""}</small>
+      {item.description ? <span className="workflow-item-description">{item.description}</span> : null}
+      <WorkflowDependencyPills item={item} onSelect={onSelect} compact />
+    </button>
+  );
+}
+
+function WorkflowDependencyPills({
+  item,
+  onSelect,
+  compact = false,
+}: {
+  item: WorkflowBoardItem;
+  onSelect: (id: string) => void;
+  compact?: boolean;
+}) {
+  if (item.dependsOn.length === 0 && item.requiredBy.length === 0) return null;
+  return (
+    <div className={`workflow-dependencies ${compact ? "compact" : ""}`}>
+      {item.dependsOn.length > 0 ? (
+        <span className="workflow-dependency-row">
+          <span>依赖</span>
+          {item.dependsOn.map((dependency) => (
+            <button key={`${item.id}-depends-${dependency.id}`} type="button" onClick={() => onSelect(dependency.id)}>
+              {dependency.label}{dependency.hidden ? " · hidden" : ""}
+            </button>
+          ))}
+        </span>
+      ) : null}
+      {item.requiredBy.length > 0 ? (
+        <span className="workflow-dependency-row">
+          <span>被依赖</span>
+          {item.requiredBy.map((dependency) => (
+            <button key={`${item.id}-required-${dependency.id}`} type="button" onClick={() => onSelect(dependency.id)}>
+              {dependency.label}{dependency.hidden ? " · hidden" : ""}
+            </button>
+          ))}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 function App() {
   const [plan, setPlan] = useState<StudioPlan | null>(null);
   const [nodes, setNodes] = useState<PlanFlowNode[]>([]);
@@ -153,6 +403,8 @@ function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showDependencies, setShowDependencies] = useState(false);
   const [draftEditorOpen, setDraftEditorOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<StudioViewMode>("canvas");
+  const [useSavedLayout, setUseSavedLayout] = useState(false);
   const [expandedNodeIds, setExpandedNodeIds] = useState<Set<string>>(() => new Set());
   const [reactFlowInstance, setReactFlowInstance] = useState<{ setCenter: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void } | null>(null);
   const [status, setStatus] = useState("");
@@ -177,6 +429,7 @@ function App() {
   });
   const [exportText, setExportText] = useState("");
   const draftChangeCount = draftEdgeChanges.length + draftNodeChanges.length;
+  const board = useMemo(() => plan ? buildWorkflowBoard(plan, { expandedNodeIds }) : null, [expandedNodeIds, plan]);
 
   const selectNode = useCallback((id: string) => setSelectedId(id), []);
   const toggleNodeExpansion = useCallback((id: string) => {
@@ -197,6 +450,7 @@ function App() {
       .then((nextPlan: StudioPlan) => {
         setPlan(nextPlan);
         setSelectedId(nextPlan.root);
+        setExpandedNodeIds(defaultExpandedFlowNodeIds());
       });
   }, [selectNode]);
 
@@ -216,27 +470,30 @@ function App() {
 
   useEffect(() => {
     if (!plan) return;
-    const projection = buildStudioGraph(plan, { showDependencies, expandedNodeIds });
+    const projection = buildStudioGraph(plan, {
+      showDependencies,
+      expandedNodeIds,
+      useSavedPositions: useSavedLayout,
+    });
     const draftGraph = applyDraftNodeChangesToGraph(projection, draftNodeChanges);
     setNodes(draftGraph.nodes.map((node) => ({
       id: node.id,
       type: "planNode",
-          position: manualPositions.get(node.id) ?? node.position,
-          sourcePosition: Position.Right,
-          targetPosition: Position.Left,
-          zIndex: node.data.stepFrame ? 0 : 1,
-          data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
-        })));
+      position: manualPositions.get(node.id) ?? node.position,
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      data: { ...node.data, onSelect: selectNode, onToggleExpand: toggleNodeExpansion },
+    })));
     setEdges(buildReactFlowEdges(draftGraph.edges, draftEdgeChanges, draftGraph.visibleNodeIds));
-  }, [draftEdgeChanges, draftNodeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion]);
+  }, [draftEdgeChanges, draftNodeChanges, expandedNodeIds, manualPositions, plan, selectNode, showDependencies, toggleNodeExpansion, useSavedLayout]);
 
   useEffect(() => {
-    if (!focusRequestId || !reactFlowInstance) return;
+    if (!focusRequestId || !reactFlowInstance || viewMode !== "canvas") return;
     const node = nodes.find((item) => item.id === focusRequestId);
     if (!node) return;
     reactFlowInstance.setCenter(node.position.x + 114, node.position.y + 42, { zoom: 1.1, duration: 450 });
     setFocusRequestId("");
-  }, [focusRequestId, nodes, reactFlowInstance]);
+  }, [focusRequestId, nodes, reactFlowInstance, viewMode]);
 
   const onNodesChange = useCallback((changes: NodeChange<PlanFlowNode>[]) => {
     setNodes((current) => applyNodeChanges(changes.filter((change) => change.type !== "remove"), current));
@@ -488,7 +745,7 @@ function App() {
     setStatus("草案已清空");
   }, []);
 
-  if (!plan) return <div className="loading">Loading Plan Canvas...</div>;
+  if (!plan || !board) return <div className="loading">Loading Studio...</div>;
   const selectedNodeEditDisabled = selectedId === plan.root || !nodeSnapshotForId(plan, draftNodeChanges, selectedId);
 
   return (
@@ -522,49 +779,88 @@ function App() {
           <button className="ghost" data-action="toggle-sidebar" onClick={() => setSidebarCollapsed((value) => !value)}>
             {sidebarCollapsed ? "Show tree" : "Hide tree"}
           </button>
-          <strong>Plan Canvas</strong>
-          <div className="legend" aria-label="Plan edge legend">
-            <span className="legend-item legend-single"><i />单选</span>
-            <span className="legend-item legend-multi"><i />多选</span>
-            <span className="legend-item legend-flow"><i />流程</span>
-            <span className="legend-item legend-dependency"><i />依赖</span>
-            <span className="legend-item legend-post"><i />后置</span>
-          </div>
-          <button
-            className={`ghost toolbar-toggle ${showDependencies ? "active" : ""}`}
-            data-action="toggle-dependencies"
-            aria-pressed={showDependencies}
-            onClick={() => setShowDependencies((value) => !value)}
-          >
-            {showDependencies ? "Hide dependencies" : "Show dependencies"}
-          </button>
-          <label className="edge-draft-control">
-            <span>连线类型</span>
-            <select
-              data-action="draft-edge-type"
-              value={draftEdgeType}
-              onChange={(event) => setDraftEdgeType(event.target.value as EditableEdgeType)}
+          <div className="view-switch" role="group" aria-label="Studio view mode">
+            <button
+              className={viewMode === "board" ? "active" : ""}
+              data-action="show-board"
+              aria-pressed={viewMode === "board"}
+              onClick={() => setViewMode("board")}
             >
-              {editableEdgeTypes.map((type) => (
-                <option key={type} value={type}>{editableEdgeLabels[type]}</option>
-              ))}
-            </select>
-          </label>
-          <span className="draft-count" aria-label="Draft change count">草案 {draftChangeCount}</span>
-          <button
-            className={`ghost toolbar-toggle ${draftEditorOpen ? "active" : ""}`}
-            data-action="toggle-draft-editor"
-            aria-pressed={draftEditorOpen}
-            onClick={() => setDraftEditorOpen((value) => !value)}
-          >
-            {draftEditorOpen ? "收起结构编辑" : "结构编辑"}
-          </button>
-          <button data-action="export-draft" onClick={exportDraft} disabled={draftChangeCount === 0}>导出草案</button>
-          <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftChangeCount === 0}>清空草案</button>
-          <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
+              Board
+            </button>
+            <button
+              className={viewMode === "canvas" ? "active" : ""}
+              data-action="show-canvas"
+              aria-pressed={viewMode === "canvas"}
+              onClick={() => setViewMode("canvas")}
+            >
+              Canvas
+            </button>
+          </div>
+          <strong>{viewMode === "board" ? "Workflow Board" : "Plan Canvas"}</strong>
+          {viewMode === "canvas" ? (
+            <>
+              <div className="legend" aria-label="Plan edge legend">
+                <span className="legend-item legend-single"><i />单选</span>
+                <span className="legend-item legend-multi"><i />多选</span>
+                <span className="legend-item legend-flow"><i />流程</span>
+                <span className="legend-item legend-dependency"><i />依赖</span>
+                <span className="legend-item legend-post"><i />后置</span>
+              </div>
+              <button
+                className={`ghost toolbar-toggle ${showDependencies ? "active" : ""}`}
+                data-action="toggle-dependencies"
+                aria-pressed={showDependencies}
+                onClick={() => setShowDependencies((value) => !value)}
+              >
+                {showDependencies ? "Hide dependencies" : "Show dependencies"}
+              </button>
+              <button
+                className={`ghost toolbar-toggle ${useSavedLayout ? "active" : ""}`}
+                data-action="toggle-saved-layout"
+                aria-pressed={useSavedLayout}
+                onClick={() => {
+                  setUseSavedLayout((value) => !value);
+                  setManualPositions(new Map());
+                }}
+              >
+                {useSavedLayout ? "Saved layout" : "Auto layout"}
+              </button>
+              <label className="edge-draft-control">
+                <span>连线类型</span>
+                <select
+                  data-action="draft-edge-type"
+                  value={draftEdgeType}
+                  onChange={(event) => setDraftEdgeType(event.target.value as EditableEdgeType)}
+                >
+                  {editableEdgeTypes.map((type) => (
+                    <option key={type} value={type}>{editableEdgeLabels[type]}</option>
+                  ))}
+                </select>
+              </label>
+              <span className="draft-count" aria-label="Draft change count">草案 {draftChangeCount}</span>
+              <button
+                className={`ghost toolbar-toggle ${draftEditorOpen ? "active" : ""}`}
+                data-action="toggle-draft-editor"
+                aria-pressed={draftEditorOpen}
+                onClick={() => setDraftEditorOpen((value) => !value)}
+              >
+                {draftEditorOpen ? "收起结构编辑" : "结构编辑"}
+              </button>
+              <button data-action="export-draft" onClick={exportDraft} disabled={draftChangeCount === 0}>导出草案</button>
+              <button className="ghost" data-action="clear-draft" onClick={clearDraft} disabled={draftChangeCount === 0}>清空草案</button>
+              <button data-action="save-layout" onClick={saveLayout}>Save layout</button>
+            </>
+          ) : (
+            <div className="board-toolbar-summary" aria-label="Workflow board totals">
+              <span>{board.modules.length} 项目</span>
+              <span>{board.modules.reduce((sum, module) => sum + module.stepCount, 0)} 步骤</span>
+              <span>{board.modules.reduce((sum, module) => sum + module.optionCount, 0)} 选项</span>
+            </div>
+          )}
           <span className={status.startsWith("Save failed") ? "status status-error" : "status"}>{status}</span>
         </div>
-        {draftEditorOpen ? (
+        {viewMode === "canvas" && draftEditorOpen ? (
           <div className="draft-editor" aria-label="Draft node editor">
             <section className="draft-editor-section">
               <h3>新增节点</h3>
@@ -709,42 +1005,63 @@ function App() {
             ))}
           </div>
         ) : null}
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onInit={setReactFlowInstance}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeDragStop={onNodeDragStop}
-          onNodeClick={(_event, node) => selectNode(node.id)}
-          nodesConnectable
-          deleteKeyCode={["Backspace", "Delete"]}
-          fitView
-          fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}
-          minZoom={MIN_CANVAS_ZOOM}
-          maxZoom={MAX_CANVAS_ZOOM}
-          colorMode="dark"
-        >
-          <Background color="#334155" gap={28} />
-          <Controls />
-          <MiniMap />
-        </ReactFlow>
+        {viewMode === "board" ? (
+          <WorkflowBoardView
+            board={board}
+            selectedId={selectedId}
+            onSelect={selectNode}
+            onToggleExpand={toggleNodeExpansion}
+          />
+        ) : (
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onInit={setReactFlowInstance}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeDragStop={onNodeDragStop}
+            onNodeClick={(_event, node) => selectNode(node.id)}
+            nodesConnectable={draftEditorOpen}
+            deleteKeyCode={["Backspace", "Delete"]}
+            fitView
+            fitViewOptions={CANVAS_FIT_VIEW_OPTIONS}
+            minZoom={MIN_CANVAS_ZOOM}
+            maxZoom={MAX_CANVAS_ZOOM}
+            colorMode="dark"
+          >
+            <Background color="#334155" gap={28} />
+            <Controls />
+            <MiniMap />
+          </ReactFlow>
+        )}
       </section>
     </main>
   );
 }
 
 function badgeForNode(node: PlanNode) {
-  if (node.mode === "single") return { mode: "single", label: "单选", title: "single = exclusive branch" };
-  if (node.mode === "multi") return { mode: "multi", label: "多选", title: "multi = selectable independent group" };
-  if (node.mode === "flow") return { mode: "flow", label: "流程", title: "flow = linear chain" };
-  return { mode: node.mode ?? "root", label: "根", title: "root = entry point" };
+  return badgeForMode(node.mode);
+}
+
+function displayBadgeForBoardItem(item: WorkflowBoardItem) {
+  return badgeForMode(item.mode);
+}
+
+function badgeForMode(mode: PlanNode["mode"]) {
+  if (mode === "single") return { mode: "single", label: "单选", title: "single = exclusive branch" };
+  if (mode === "multi") return { mode: "multi", label: "多选", title: "multi = selectable independent group" };
+  if (mode === "flow") return { mode: "flow", label: "流程", title: "flow = linear chain" };
+  return { mode: mode ?? "root", label: "根", title: "root = entry point" };
 }
 
 function badgeForNodeId(nodeId: string, plan: InstallationPlan) {
   return badgeForNode(plan.nodes[nodeId]);
+}
+
+function defaultExpandedFlowNodeIds(): Set<string> {
+  return new Set();
 }
 
 function edgeStyle(type: PlanEdge["type"]) {
@@ -757,16 +1074,6 @@ function edgeStyle(type: PlanEdge["type"]) {
     flow: { stroke: "#a78bfa", strokeWidth: 2.5 },
   };
   return palette[type];
-}
-
-function stepFrameStyle(data: FlowNodeData): React.CSSProperties | undefined {
-  if (!data.stepFrame) return undefined;
-  return {
-    "--step-frame-left": `${data.stepFrame.left}px`,
-    "--step-frame-top": `${data.stepFrame.top}px`,
-    "--step-frame-width": `${data.stepFrame.width}px`,
-    "--step-frame-height": `${data.stepFrame.height}px`,
-  } as React.CSSProperties;
 }
 
 function applyDraftNodeChangesToGraph(
