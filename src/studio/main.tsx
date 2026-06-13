@@ -28,6 +28,21 @@ import {
 import { buildStudioGraph, type StudioNodeData } from "./projection.js";
 import "./studio.css";
 
+/**
+ * Studio main component - read-only visualization and debugging tool
+ *
+ * Features:
+ * - Board view: workflow panel display
+ * - Canvas view: dependency graph visualization
+ * - Layout saving: save node positions
+ * - Diagnostics panel: show configuration issues
+ *
+ * Not included (removed in refactoring):
+ * - Draft editing: node add/remove/connect
+ * - Draft export: generate change prompts
+ * - Interactive editing: nodes are read-only
+ */
+
 type StudioPlan = InstallationPlan & {
   overlay?: {
     version: 1 | 2 | null;
