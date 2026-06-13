@@ -64,8 +64,8 @@ template steps may still call system tools such as `apt`, `git`, `curl`, or
 - **Three built-in flows** — Tmux, Zsh, and SSH one-click configuration with 80+ composable shell templates, mainly targeting Debian/Ubuntu-style environments
 - **Interactive TUI menu** — arrow-key navigation, multi-select, flow-based wizards with progress tracking
 - **GitHub mirror acceleration** — built-in speed-tested mirror selection for users behind restrictive networks
-- **Plan Canvas (Studio)** — React Flow visual workspace to inspect the resolved graph, save layout positions, and export semantic change drafts for agents
-- **Sidecar overlays** — adjust labels, hide nodes, override safe display fields, and represent limited v2 dependency/ordering patches without modifying shell templates
+- **Plan Canvas (Studio)** — React Flow visual workspace to inspect the resolved graph and dependency relationships
+- **Strong schema constraints** — flow nodes must have children, leaf nodes must have scripts, parent nodes must declare mode
 - **Template variables** — `{{variable}}` substitution with defaults, runtime prompts (text, number, key capture)
 - **Dependency graph** — declare `deps: [...]` and `post: true` to control execution order automatically
 - **Dry-run mode** — `--dry-run-plan` renders the full execution plan without running anything
