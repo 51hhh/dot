@@ -167,52 +167,34 @@ describe("studio canvas", () => {
     expect(source).toContain('aria-label="Plan diagnostics"');
     expect(source).toContain("Save failed:");
     expect(source).toContain("base: plan?.overlay");
-    expect(source).toContain('data-action="draft-edge-type"');
-    expect(source).toContain('data-action="export-draft"');
-    expect(source).toContain('data-action="clear-draft"');
-    expect(source).toContain("draftEditorOpen, setDraftEditorOpen");
-    expect(source).toContain('data-action="toggle-draft-editor"');
-    expect(source).toContain("aria-pressed={draftEditorOpen}");
-    expect(source).toContain('draftEditorOpen ? "收起结构编辑" : "结构编辑"');
-    expect(source).toContain('{viewMode === "canvas" && draftEditorOpen ? (');
-    expect(source).toContain('data-action="draft-node-id"');
-    expect(source).toContain('data-action="draft-node-label"');
-    expect(source).toContain('data-action="draft-node-mode"');
-    expect(source).toContain('data-action="add-draft-node"');
-    expect(source).toContain('data-action="draft-node-edit-label"');
-    expect(source).toContain('data-action="draft-node-edit-description"');
-    expect(source).toContain('data-action="draft-node-edit-mode"');
-    expect(source).toContain('data-action="update-draft-node"');
-    expect(source).toContain('data-action="remove-draft-node"');
-    expect(source).toContain(">连线类型<");
-    expect(source).toContain(">导出草案<");
-    expect(source).toContain(">清空草案<");
-    expect(source).toContain("结构编辑");
-    expect(source).toContain(">添加草案节点<");
-    expect(source).toContain(">更新草案节点<");
-    expect(source).toContain(">删除草案节点<");
-    expect(source).toContain("draftEdgeChanges.length + draftNodeChanges.length");
-    expect(source).toContain("草案 {draftChangeCount}");
-    expect(source).toContain("type OnConnect");
-    expect(source).toContain("onConnect={onConnect}");
-    expect(source).toContain("nodesConnectable");
-    expect(source).toContain('deleteKeyCode={["Backspace", "Delete"]}');
-    expect(source).not.toContain("nodesConnectable={false}");
-    expect(source).not.toContain("deleteKeyCode={null}");
+
+    // Canvas should be read-only for navigation, not editing
+    expect(source).toContain("nodesConnectable={false}");
+    expect(source).toContain("nodesDraggable={false}");
+    expect(source).toContain("edgesFocusable={false}");
+
+    // Draft editing features have been removed
+    expect(source).not.toContain('data-action="draft-edge-type"');
+    expect(source).not.toContain('data-action="export-draft"');
+    expect(source).not.toContain('data-action="clear-draft"');
+    expect(source).not.toContain("draftEditorOpen");
+    expect(source).not.toContain("draftEdgeChanges");
+    expect(source).not.toContain("draftNodeChanges");
+    expect(source).not.toContain("draftChangeCount");
+    expect(source).not.toContain("type OnConnect");
+    expect(source).not.toContain("onConnect={onConnect}");
+    expect(source).toContain("nodesConnectable={false}");
+    expect(source).toContain("nodesDraggable={false}");
+    expect(source).toContain("edgesFocusable={false}");
     expect(source).toContain("patch: { version: 1, positions }");
     expect(source).toContain("nodes.filter((node) => Boolean(plan?.nodes[node.id]))");
-    expect(source).toContain("buildAgentDraftExport(plan, draftEdgeChanges, draftNodeChanges)");
-    expect(source).toContain("nodeOperations:");
-    expect(source).toContain("changedOperations:");
-    expect(source).toContain("overlayPatchDraft:");
-    expect(source).toContain("sourceOnlyOperations:");
-    expect(source).toContain("count: nodeOperations.length + structureEdgeOperations.length");
-    expect(source).toContain("recordDraftNodeAdd");
-    expect(source).toContain("recordDraftNodeUpdate");
-    expect(source).toContain("recordDraftNodeRemove");
-    expect(source).toContain("applyDraftNodeChangesToGraph");
-    expect(source).toContain("visibleNodeIds.has(change.from) && visibleNodeIds.has(change.to)");
-    expect(source).not.toContain("0 draft changes");
+
+    // Draft export functionality has been removed
+    expect(source).not.toContain("buildAgentDraftExport");
+    expect(source).not.toContain("recordDraftNodeAdd");
+    expect(source).not.toContain("recordDraftNodeUpdate");
+    expect(source).not.toContain("recordDraftNodeRemove");
+    expect(source).not.toContain("applyDraftNodeChangesToGraph");
     expect(source).not.toContain("Add or delete canvas edges locally");
     expect(source).not.toContain("postItems");
     expect(source).not.toContain("join-affordance");
