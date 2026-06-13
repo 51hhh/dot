@@ -94,7 +94,76 @@ npm run build
 bash dist/dot.sh
 ```
 
-## Main Commands
+## Configuration
+
+dot uses YAML to define menu structures. A minimal example:
+
+```yaml
+name: "My Installer"
+menu:
+  - id: tool-setup
+    label: "Tool Setup"
+    mode: flow  # linear workflow
+    children:
+      - id: install
+        label: "Install Tool"
+        mode: single  # choose one option
+        children:
+          - id: install-apt
+            label: "Via apt"
+            script: ../templates/install-apt.sh
+          - id: install-source
+            label: "From source"
+            script: ../templates/install-source.sh
+      
+      - id: configure
+        label: "Configure"
+        script: ../templates/configure.sh
+```
+
+### Schema Constraints
+
+To ensure configuration correctness, dot enforces these constraints:
+
+1. **Flow nodes must have children** - A flow represents a sequence of steps
+2. **Leaf nodes must have scripts** - Executable nodes need a script or prompt
+3. **Parent nodes must declare mode** - Specify single/multi/flow selection behavior
+4. **endFlow only for flow children** - Can't end a flow from the flow container itself
+5. **Post nodes should be leaves** - Finalization steps shouldn't have sub-tasks
+
+See [docs/schema-constraints.md](docs/schema-constraints.md) for detailed rules and examples.
+
+### Template Variables
+
+Scripts support `{{variable}}` substitution:
+
+```yaml
+- id: custom-port
+  label: "Custom Port"
+  script: templates/setup-port.sh
+  vars:
+    port: "8080"
+  prompt:
+    type: number
+    var: port
+    label: "Enter port number"
+```
+
+### Dependencies
+
+Control execution order with `deps`:
+
+```yaml
+- id: configure
+  label: "Configure"
+  script: configure.sh
+  deps: [install]  # runs after install
+
+- id: cleanup
+  label: "Cleanup"
+  post: true  # runs after all normal steps
+  script: cleanup.sh
+```
 
 ### `dot build`
 
