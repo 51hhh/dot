@@ -530,7 +530,6 @@ describe("buildInstallationPlan", () => {
       "tmux-github-mirror",
       "tmux-prefix",
       "tmux-plugins",
-      "tmux-status",
       "tmux-options",
       "tmux-finalize",
     ];

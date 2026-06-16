@@ -64,6 +64,16 @@ menu:
         description: "Tmux Plugin Manager，安装其他插件的基础"
         script: "../templates/tmux/tpm-install.sh"
         deps: ["tmux-header"]
+      - id: "tmux-plugin-resurrect"
+        label: "resurrect (会话保存恢复)"
+        description: "保存 tmux 会话，重启后恢复"
+        script: "../templates/tmux/plugin-resurrect.sh"
+        deps: ["tmux-tpm"]
+      - id: "tmux-plugin-continuum"
+        label: "continuum (自动保存)"
+        description: "定期自动保存会话，依赖 resurrect"
+        script: "../templates/tmux/plugin-continuum.sh"
+        deps: ["tmux-tpm", "tmux-plugin-resurrect"]
       - id: "tmux-plugin-yank"
         label: "yank (系统剪贴板)"
         description: "复制内容同步到系统剪贴板"
@@ -74,12 +84,34 @@ menu:
         description: "一套开箱即用的合理默认配置"
         script: "../templates/tmux/plugin-sensible.sh"
         deps: ["tmux-tpm"]
+      - id: "tmux-plugin-open"
+        label: "open (快速打开)"
+        description: "按 o 打开文件/路径，Ctrl+o 打开 URL"
+        script: "../templates/tmux/plugin-open.sh"
+        deps: ["tmux-tpm"]
       - id: "tmux-tpm-finalize"
         label: "TPM 初始化"
         description: "加载 TPM 引擎，自动在所有插件之后执行"
         script: "../templates/tmux/tpm-finalize.sh"
         deps: ["tmux-tpm"]
         post: true
+
+  # ── 状态栏 ──
+  - id: "tmux-status"
+    mode: "single"
+    label: "状态栏风格"
+    description: "选择底部状态栏样式"
+    children:
+      - id: "tmux-status-minimal"
+        label: "简洁风格"
+        description: "只显示会话名、窗口和时间"
+        script: "../templates/tmux/status-minimal.sh"
+        deps: ["tmux-header"]
+      - id: "tmux-status-rich"
+        label: "信息丰富"
+        description: "显示 CPU、内存、详细时间"
+        script: "../templates/tmux/status-rich.sh"
+        deps: ["tmux-header"]
 
   # ── 基础配置 ──
   - id: "tmux-options"

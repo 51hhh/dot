@@ -104,15 +104,35 @@ menu:
                 script: "../templates/tmux/tpm-finalize.sh"
                 deps: ["tmux-tpm"]
                 post: true
-          - id: "tmux-plugin-productivity"
-            label: "复制与默认体验"
+          - id: "tmux-plugin-session"
+            label: "会话保存与恢复"
             mode: "multi"
-            description: "提升日常操作效率：剪贴板同步和合理的默认按键体验"
+            description: "适合长期工作区：保存窗格、窗口和会话状态，并可定期自动备份"
+            children:
+              - id: "tmux-plugin-resurrect"
+                label: "resurrect (会话保存恢复)"
+                description: "手动保存并恢复 tmux 会话、窗格内容和 shell 历史，适合重启后恢复工作区"
+                script: "../templates/tmux/plugin-resurrect.sh"
+                deps: ["tmux-tpm"]
+              - id: "tmux-plugin-continuum"
+                label: "continuum (自动保存)"
+                description: "在 resurrect 基础上定期自动保存会话，并可在 tmux 启动时自动恢复"
+                script: "../templates/tmux/plugin-continuum.sh"
+                deps: ["tmux-tpm", "tmux-plugin-resurrect"]
+          - id: "tmux-plugin-productivity"
+            label: "复制、打开与默认体验"
+            mode: "multi"
+            description: "提升日常操作效率：剪贴板同步、快速打开路径，以及更合理的默认按键体验"
             children:
               - id: "tmux-plugin-yank"
                 label: "yank (系统剪贴板)"
                 description: "将复制模式或鼠标选中的内容同步到系统剪贴板，适合频繁跨应用复制"
                 script: "../templates/tmux/plugin-yank.sh"
+                deps: ["tmux-tpm"]
+              - id: "tmux-plugin-open"
+                label: "open (快速打开)"
+                description: "在 tmux 中快速打开文件、路径或 URL，减少复制路径后手动打开的步骤"
+                script: "../templates/tmux/plugin-open.sh"
                 deps: ["tmux-tpm"]
               - id: "tmux-plugin-sensible"
                 label: "sensible (合理默认)"
@@ -122,8 +142,13 @@ menu:
           - id: "tmux-plugin-status"
             label: "状态栏信息增强"
             mode: "multi"
-            description: "在状态栏展示 CPU、内存和电池信息，适合重视运行状态可视化的环境"
+            description: "在状态栏展示前缀键、CPU、内存和电池信息，适合重视运行状态可视化的环境"
             children:
+              - id: "tmux-plugin-prefix-highlight"
+                label: "prefix-highlight (前缀键状态)"
+                description: "在状态栏显示前缀键是否处于激活状态，帮助确认下一次按键是否会被 tmux 捕获"
+                script: "../templates/tmux/plugin-prefix-highlight.sh"
+                deps: ["tmux-tpm"]
               - id: "tmux-plugin-cpu"
                 label: "cpu (CPU/内存状态)"
                 description: "在状态栏显示 CPU 与内存使用情况，适合需要持续观察系统负载的终端工作流"
@@ -135,25 +160,52 @@ menu:
                 script: "../templates/tmux/plugin-battery.sh"
                 deps: ["tmux-tpm"]
           - id: "tmux-plugin-themes"
-            label: "主题外观"
+            label: "主题外观（二选一推荐）"
             mode: "multi"
-            description: "Catppuccin 柔和主题；选择后会提示安装 JetBrainsMono Nerd Font 以正确显示状态栏图标"
+            description: "主题插件会同时改写状态栏样式；Catppuccin 与 Dracula 建议只选择一个，避免配置互相覆盖"
             children:
               - id: "tmux-plugin-catppuccin"
                 label: "catppuccin/tmux (柔和主题)"
                 description: "Catppuccin pastel 配色主题；选择后会提示安装 JetBrainsMono Nerd Font 以正确显示状态栏图标"
                 script: "../templates/tmux/plugin-catppuccin.sh"
                 deps: ["tmux-tpm", "tmux-font-jetbrainsmono"]
+              - id: "tmux-plugin-dracula"
+                label: "dracula/tmux (高对比主题)"
+                description: "Dracula 深色高对比主题；如果也选择 Catppuccin，两个主题的状态栏设置可能互相覆盖"
+                script: "../templates/tmux/plugin-dracula.sh"
+                deps: ["tmux-tpm"]
           - id: "tmux-plugin-navigation"
-            label: "导航工具"
+            label: "导航与侧边栏"
             mode: "multi"
-            description: "增强窗格导航，适合 Vim/Neovim 用户"
+            description: "增强窗格与项目文件导航，适合 Vim/Neovim 用户和常在 tmux 中浏览项目的工作流"
             children:
+              - id: "tmux-plugin-sidebar"
+                label: "sidebar (文件树侧边栏)"
+                description: "在 tmux 侧边栏中显示项目文件树，便于快速浏览和打开目录结构"
+                script: "../templates/tmux/plugin-sidebar.sh"
+                deps: ["tmux-tpm"]
               - id: "tmux-plugin-vim-navigator"
                 label: "vim-tmux-navigator (Vim/Neovim 窗格导航)"
                 description: "在 Vim/Neovim 与 tmux 窗格之间使用一致快捷键无缝移动，减少编辑器和终端切换成本"
                 script: "../templates/tmux/plugin-vim-tmux-navigator.sh"
                 deps: ["tmux-tpm"]
+
+      # ── 状态栏 ──
+      - id: "tmux-status"
+        label: "状态栏风格"
+        mode: "single"
+        description: "选择底部状态栏样式"
+        children:
+          - id: "tmux-status-minimal"
+            label: "简洁风格"
+            description: "只显示会话名、窗口和时间"
+            script: "../templates/tmux/status-minimal.sh"
+            deps: ["tmux-header"]
+          - id: "tmux-status-rich"
+            label: "信息丰富"
+            description: "显示 CPU、内存、详细时间"
+            script: "../templates/tmux/status-rich.sh"
+            deps: ["tmux-header"]
 
       # ── 基础配置 ──
       - id: "tmux-options"

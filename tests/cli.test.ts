@@ -77,10 +77,10 @@ describe("CLI --select", () => {
       "--quiet", "--dry-run",
     ]);
     expect(exitCode).toBe(0);
-    // tmux-plugins has 7 children (tpm + 6 plugins), all should be included
+    // tmux-plugins 子菜单，应包含 tpm + 插件
     expect(stdout).toContain("tmux-tpm");
-    expect(stdout).toContain("tmux-plugin-resurrect");
     expect(stdout).toContain("tmux-plugin-yank");
+    expect(stdout).toContain("tmux-plugin-sensible");
   });
 
   it("rejects branch selections that contain explicit single-choice groups", () => {
@@ -95,7 +95,7 @@ describe("CLI --select", () => {
   it("auto-resolves dependencies", () => {
     const { stdout, exitCode } = run([
       "--config", config,
-      "--select", "tmux-plugin-resurrect",
+      "--select", "tmux-plugin-yank",
       "--quiet", "--dry-run",
     ]);
     expect(exitCode).toBe(0);
@@ -539,30 +539,21 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_CHILDREN['__root']='tmux zsh ssh'");
     expect(script).toContain("DOT_MODES['__root']='single'");
     expect(script).toContain("DOT_MODES['tmux']='flow'");
-    expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-status tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
+    expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
     expect(script).toContain("DOT_MODES['tmux-plugins']='flow'");
     expect(script).toContain(
-      "DOT_CHILDREN['tmux-plugins']='tmux-plugin-foundation tmux-plugin-session tmux-plugin-productivity tmux-plugin-status tmux-plugin-themes tmux-plugin-navigation'"
+      "DOT_CHILDREN['tmux-plugins']='tmux-plugin-foundation tmux-plugin-productivity tmux-plugin-status tmux-plugin-themes tmux-plugin-navigation'"
     );
     expect(script).toContain("DOT_MODES['tmux-plugin-status']='multi'");
     expect(script).toContain("DOT_MODES['tmux-plugin-themes']='multi'");
     expect(script).toContain("tmux-prefix-record");
     expect(script).toContain("tmux-prefix-compose");
-    expect(script).toContain("tmux-plugin-prefix-highlight");
-    expect(script).toContain("tmux-plugins/tmux-prefix-highlight");
     expect(script).toContain("tmux-plugin-cpu");
     expect(script).toContain("tmux-plugins/tmux-cpu");
     expect(script).toContain("tmux-plugin-battery");
     expect(script).toContain("tmux-plugins/tmux-battery");
-    expect(script).toContain("tmux-plugin-sidebar");
-    expect(script).toContain("tmux-plugins/tmux-sidebar");
     expect(script).toContain("tmux-plugin-catppuccin");
     expect(script).toContain("catppuccin/tmux");
-    expect(script).toContain("RESURRECT_DIR=\"$HOME/.tmux/resurrect\"");
-    expect(script).toContain("mkdir -p \"$RESURRECT_DIR\"");
-    expect(script).toContain("set -g @resurrect-dir '$RESURRECT_DIR'");
-    expect(script).toContain("已添加 tmux-resurrect 插件，保存目录: $RESURRECT_DIR");
-    expect(script).toContain("dracula/tmux");
     expect(script).toContain("tmux-plugin-vim-navigator");
     expect(script).toContain("christoomey/vim-tmux-navigator");
     expect(script).toContain("dot_sudo apt-get update -qq");

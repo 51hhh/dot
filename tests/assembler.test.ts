@@ -618,7 +618,7 @@ describe("assembleStandalone", () => {
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("status=0 mirror=1");
       expect(result.stdout).toContain("tmux-github-mirror");
-      expect(result.stdout).toMatch(/plan=.*tmux-install-apt.*tmux-github-mirror.*tmux-prefix-ctrl-a.*tmux-status-minimal/);
+      expect(result.stdout).toMatch(/plan=.*tmux-install-apt.*tmux-github-mirror.*tmux-prefix-ctrl-a/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
