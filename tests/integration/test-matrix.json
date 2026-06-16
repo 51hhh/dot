@@ -1,0 +1,94 @@
+{
+  "scenarios": [
+    {
+      "name": "最小配置 - apt + Ctrl+A",
+      "select": [
+        "tmux-install-apt",
+        "tmux-header",
+        "tmux-prefix-ctrl-a",
+        "tmux-status-minimal",
+        "tmux-opt-mouse",
+        "tmux-opt-index"
+      ],
+      "checks": [
+        { "type": "command", "cmd": "tmux -V", "expect": "tmux" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "prefix C-a" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "mouse on" },
+        { "type": "tmux_session", "action": "new", "name": "test" }
+      ]
+    },
+    {
+      "name": "Ctrl+B + Vi模式 + 丰富状态栏",
+      "select": [
+        "tmux-install-apt",
+        "tmux-header",
+        "tmux-prefix-ctrl-b",
+        "tmux-status-rich",
+        "tmux-opt-vi",
+        "tmux-opt-split"
+      ],
+      "checks": [
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "prefix C-b" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "mode-keys vi" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "cpu_percentage" }
+      ]
+    },
+    {
+      "name": "完整插件 - TPM + resurrect + yank",
+      "select": [
+        "tmux-install-apt",
+        "tmux-header",
+        "tmux-prefix-ctrl-a",
+        "tmux-tpm",
+        "tmux-plugin-resurrect",
+        "tmux-plugin-yank",
+        "tmux-plugin-sensible",
+        "tmux-tpm-finalize",
+        "tmux-status-minimal"
+      ],
+      "checks": [
+        { "type": "dir_exists", "path": "/root/.tmux/plugins/tpm" },
+        { "type": "dir_exists", "path": "/root/.tmux/plugins/tmux-resurrect" },
+        { "type": "dir_exists", "path": "/root/.tmux/plugins/tmux-yank" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "@plugin.*tpm" }
+      ]
+    },
+    {
+      "name": "Continuum 自动依赖 resurrect",
+      "select": [
+        "tmux-install-apt",
+        "tmux-header",
+        "tmux-prefix-ctrl-a",
+        "tmux-tpm",
+        "tmux-plugin-continuum",
+        "tmux-tpm-finalize"
+      ],
+      "checks": [
+        { "type": "dir_exists", "path": "/root/.tmux/plugins/tmux-resurrect" },
+        { "type": "dir_exists", "path": "/root/.tmux/plugins/tmux-continuum" },
+        { "type": "file_contains", "path": "/root/.tmux.conf", "pattern": "continuum-restore" }
+      ]
+    },
+    {
+      "name": "交互式入口测试 - 管道模式",
+      "select": [],
+      "interactive": true,
+      "checks": [
+        { "type": "pipe_execution", "input": "q\n", "expect_exit": 0 },
+        { "type": "stderr_not_contains", "pattern": "/dev/tty.*没有那个设备" }
+      ]
+    },
+    {
+      "name": "源码编译安装路径",
+      "select": [
+        "tmux-install-source",
+        "tmux-header",
+        "tmux-prefix-ctrl-a"
+      ],
+      "checks": [
+        { "type": "command", "cmd": "tmux -V", "expect": "tmux 3" },
+        { "type": "file_exists", "path": "/usr/local/bin/tmux" }
+      ]
+    }
+  ]
+}

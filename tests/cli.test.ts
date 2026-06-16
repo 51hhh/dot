@@ -446,8 +446,7 @@ describe("CLI build", () => {
       );
 
       const planResult = run(["plan", "--config", configPath, "--format", "text"]);
-      expect(planResult.exitCode).toBe(0);
-      expect(planResult.stdout).toContain("error: circular-dependency");
+      expect(planResult.exitCode).toBe(1); // 循环依赖现在在 loader 阶段抛出异常
 
       const buildResult = run(["build", "--config", configPath, "--output", output, "--quiet"]);
       expect(buildResult.exitCode).toBe(1);
