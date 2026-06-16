@@ -7,6 +7,12 @@ output:
   dir: "dist"
 
 menu:
+  # ── 卸载 ──
+  - id: "tmux-uninstall"
+    label: "🗑️  完全卸载"
+    description: "卸载 Tmux 并清理所有配置文件"
+    script: "../templates/tmux/uninstall.sh"
+
   # ── 安装方式 ──
   - id: "tmux-install"
     mode: "single"
