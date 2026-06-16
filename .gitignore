@@ -7,7 +7,6 @@ coverage/
 .tmp-inspect/
 .worktrees/
 .vscode/
-.claude/worktrees/
 .agents/
 .codex/
 Tmux.sh
