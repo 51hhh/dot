@@ -12,4 +12,5 @@ coverage/
 .codex/
 Tmux.sh
 docs/superpowers/
-.trellis/tasks/archive/2026-06/05-30-brainstorm-arch/
+.trellis/
+.claude/
