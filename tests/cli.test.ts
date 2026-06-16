@@ -572,9 +572,9 @@ describe("CLI build dot config", () => {
     expect(script).toContain("TPM 更新失败；将继续使用本地已有 TPM。");
     expect(script).toContain("dot_git_clone_with_fallback \"$TPM_REPO\" \"$TPM_DIR\" --depth 1");
     expect(script).toContain("TPM_INSTALLER=\"$TPM_DIR/bin/install_plugins\"");
-    expect(script).toContain("export TMUX_PLUGIN_MANAGER_PATH=\"$TPM_PATH\"");
-    expect(script).toContain("tmux -L \"$TPM_SOCKET\" run-shell \"$TPM_INSTALLER\"");
-    expect(script).toContain("请启动 tmux 后按 prefix + I 手动安装插件");
+    // 简化的 TPM 安装逻辑（对齐可用脚本）
+    expect(script).toContain('| tee "$TPM_LOG"');
+    expect(script).toContain("可在 tmux 内按 prefix + I 重试");
     expect(script).toContain("TPM install_plugins 不存在或不可执行");
     expect(script).not.toContain("install_plugins\" 2>/dev/null || true");
     expect(script).toContain("https://gh.ddlc.top/");
