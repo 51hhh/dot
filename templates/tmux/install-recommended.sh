@@ -19,7 +19,6 @@ cat > "$RECOMMENDED_TMUX_CONF" << TMUX_CONF
 
 # List of plugins
 set -g @plugin 'tmux-plugins/tpm'
-set-environment -g TMUX_PLUGIN_MANAGER_PATH "$RECOMMENDED_TPM_PATH"
 set -g @plugin 'tmux-plugins/tmux-sensible'
 set -g @plugin 'christoomey/vim-tmux-navigator'
 set -g @plugin 'tmux-plugins/tmux-yank'
@@ -27,17 +26,6 @@ set -g @plugin 'jimeh/tmuxifier'
 set -g @plugin 'tmux-plugins/tmux-cpu'
 set -g @plugin 'tmux-plugins/tmux-battery'
 set -g @plugin 'catppuccin/tmux'
-
-# tmux-resurrect: 保存和恢复 tmux 会话
-set -g @plugin 'tmux-plugins/tmux-resurrect'
-set -g @resurrect-dir '$RECOMMENDED_RESURRECT_DIR'
-set -g @resurrect-capture-pane-contents 'on'
-set -g @resurrect-save-shell-history 'on'
-
-# tmux-continuum: 自动定期保存会话
-set -g @plugin 'tmux-plugins/tmux-continuum'
-set -g @continuum-restore 'on'
-set -g @continuum-save-interval '15'
 
 # catppuccin theme options (must be set BEFORE TPM runs catppuccin)
 set -g @catppuccin_window_status_style "rounded"
