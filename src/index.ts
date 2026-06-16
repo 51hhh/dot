@@ -16,7 +16,6 @@ import {
 } from "./planner/index.js";
 import { renderPlanJson } from "./planner/render-json.js";
 import { renderPlanTree } from "./planner/render-tree.js";
-import { startStudio } from "./studio/server.js";
 
 const program = new Command();
 
@@ -69,18 +68,6 @@ program
     }
   });
 
-program
-  .command("studio")
-  .description("Open the local plan canvas studio")
-  .requiredOption("-c, --config <path>", "Path to config file (YAML/JSON)")
-  .option("--port <port>", "Studio port", "5177")
-  .action(async (opts) => {
-    try {
-      await runStudio(opts);
-    } catch (err: unknown) {
-      handleError(err);
-    }
-  });
 
 function handleError(err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
@@ -258,14 +245,6 @@ function runPlan(opts: {
   process.stdout.write(renderPlanTree(plan));
 }
 
-async function runStudio(opts: {
-  config: string;
-  port?: string;
-}) {
-  const port = Number.parseInt(opts.port ?? "5177", 10);
-  const server = await startStudio({ configPath: opts.config, port });
-  console.log(c.success(`\n  ✓ Plan Canvas: http://127.0.0.1:${server.port}/studio\n`));
-}
 
 function resolveOutputPath(
   configPath: string,
@@ -283,7 +262,7 @@ function writeScript(outputPath: string, script: string): void {
   fs.writeFileSync(outputPath, script, { mode: 0o755 });
 }
 
-if (process.argv.length > 2 && !["build", "generate", "plan", "studio"].includes(process.argv[2])) {
+if (process.argv.length > 2 && !["build", "generate", "plan"].includes(process.argv[2])) {
   process.argv.splice(2, 0, "generate");
 }
 
