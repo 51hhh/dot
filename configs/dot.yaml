@@ -33,7 +33,7 @@ menu:
             label: "安装推荐tmux安装配置"
             description: "使用旧 Tmux.sh 的完整推荐配置：Ctrl+Space、Catppuccin 状态栏、常用插件和 Vi 模式"
             script: "../templates/tmux/install-recommended.sh"
-            deps: ["tmux-install-apt", "tmux-github-mirror", "tmux-tpm", "tmux-font-jetbrainsmono"]
+            deps: ["tmux-install-apt", "tmux-github-mirror", "tmux-tpm", "tmux-tpm-finalize", "tmux-font-jetbrainsmono"]
             post: true
             endFlow: true
 
