@@ -542,7 +542,7 @@ describe("CLI build dot config", () => {
     expect(script).toContain("DOT_CHILDREN['tmux']='tmux-install tmux-github-mirror tmux-prefix tmux-plugins tmux-options tmux-finalize tmux-font-jetbrainsmono tmux-header'");
     expect(script).toContain("DOT_MODES['tmux-plugins']='flow'");
     expect(script).toContain(
-      "DOT_CHILDREN['tmux-plugins']='tmux-plugin-foundation tmux-plugin-productivity tmux-plugin-status tmux-plugin-themes tmux-plugin-navigation'"
+      "DOT_CHILDREN['tmux-plugins']='tmux-plugin-foundation tmux-plugin-productivity tmux-plugin-status tmux-plugin-themes tmux-plugin-navigation tmux-plugin-session-management'"
     );
     expect(script).toContain("DOT_MODES['tmux-plugin-status']='multi'");
     expect(script).toContain("DOT_MODES['tmux-plugin-themes']='multi'");
@@ -556,6 +556,8 @@ describe("CLI build dot config", () => {
     expect(script).toContain("catppuccin/tmux");
     expect(script).toContain("tmux-plugin-vim-navigator");
     expect(script).toContain("christoomey/vim-tmux-navigator");
+    expect(script).toContain("tmux-plugin-tmuxifier");
+    expect(script).toContain("jimeh/tmuxifier");
     expect(script).toContain("dot_sudo apt-get update -qq");
     expect(script).toContain("command -v tmux");
     expect(script).toContain("tmux -V");

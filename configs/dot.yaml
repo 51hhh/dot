@@ -154,6 +154,16 @@ menu:
                 description: "在 Vim/Neovim 与 tmux 窗格之间使用一致快捷键无缝移动，减少编辑器和终端切换成本"
                 script: "../templates/tmux/plugin-vim-tmux-navigator.sh"
                 deps: ["tmux-tpm"]
+          - id: "tmux-plugin-session-management"
+            label: "会话布局管理"
+            mode: "multi"
+            description: "通过脚本定义和加载复杂的会话、窗口布局"
+            children:
+              - id: "tmux-plugin-tmuxifier"
+                label: "tmuxifier (会话与窗口布局管理)"
+                description: "使用 Shell 脚本定义窗口分割、会话布局，一键加载完整工作环境"
+                script: "../templates/tmux/plugin-tmuxifier.sh"
+                deps: ["tmux-tpm"]
 
       # ── 基础配置 ──
       - id: "tmux-options"
