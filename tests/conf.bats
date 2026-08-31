@@ -74,6 +74,53 @@ gen() {
   grep -q '^set -g prefix C-b$' "$CONF"
 }
 
+@test "自定义前缀键不合法时回落 C-b，而不是写出 tmux 会忽略的行" {
+  # 实测 tmux 3.6：`set -g prefix foo bar` 不报错，prefix 仍是 C-b。
+  # 也就是说照原样写进去 = 配置里说一套、实际生效另一套，用户毫无线索。
+  gen --set tmux.prefix=custom --set tmux.prefix_custom="foo bar" \
+    --only tmux.header --only tmux.prefix
+  grep -q '^set -g prefix C-b$' "$CONF"
+  ! grep -q 'foo bar' "$CONF"
+}
+
+@test "不合法的自定义前缀在 --dry-run 阶段就告警" {
+  run env HOME="$H" bash "$BATS_TEST_DIRNAME/../TMUX.sh" \
+    --set tmux.prefix=custom --set tmux.prefix_custom="foo bar" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"不是合法的 tmux 键名"* ]]
+}
+
+# ── 写不进去必须报失败 ───────────────────────────────────────────
+
+@test "配置写不进去时步骤失败，不会报成功" {
+  # 写不进去曾经能跑出一屏「✓ 已配置」加退出码 0，而文件一个字节都没有：
+  # 重定向失败时 cat 根本不执行，返回 1 却没人看。
+  #
+  # 用「把 .tmux.conf 占成目录」制造失败，而不是 chmod 555 的 HOME：
+  # 权限位对 root 无效，而 CI / docker 里的测试正是以 root 跑的 ——
+  # 那种写法在本机红、在 CI 绿，等于没测。EISDIR 谁都绕不过。
+  mkdir -p "$CONF"
+  run env HOME="$H" bash "$BATS_TEST_DIRNAME/../TMUX.sh" \
+    --set tmux.profile=custom --set tmux.options=mouse \
+    --only tmux.header --only tmux.opt.mouse --yes
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"写入"*"失败"* ]]
+  [[ "$output" != *"已初始化"* ]]
+}
+
+@test "追加写不进去时步骤失败，不会报成功" {
+  # header 之后每一步都是追加。单独测一次追加路径：
+  # conf_append 的返回值必须被每个调用点 `|| return 1` 接住。
+  gen --set tmux.profile=custom --only tmux.header
+  rm -f "$CONF"
+  mkdir -p "$CONF"
+  run env HOME="$H" bash "$BATS_TEST_DIRNAME/../TMUX.sh" \
+    --set tmux.profile=custom --set tmux.options=mouse \
+    --only tmux.opt.mouse --yes
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"写入"*"失败"* ]]
+}
+
 # ── 推荐配置内容 ─────────────────────────────────────────────────
 
 @test "推荐配置包含全部 8 个插件声明" {

@@ -189,6 +189,28 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [[ "$output" == *"不接受值"* ]]
 }
 
+# ── 显式的空答案是答案，不是「没答」──────────────────────────────
+#
+# 预设按 noclobber 套用。若按「值非空」判断，答案文件里写 tmux.plugins=
+# （明确表示不要插件）会被预设悄悄填回 8 个插件 —— 文件说一套、装的是另一套。
+
+@test "预设不会覆盖显式写成空的答案" {
+  local f="$BATS_TEST_TMPDIR/empty.txt"
+  printf 'tmux.profile=recommended\ntmux.plugins=\n' > "$f"
+  run SH --answers "$f" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *tmux.plugin.* ]]
+  # 其余预设值仍应生效，否则就是把整个预设废掉了
+  [[ "$output" == *tmux.apt* ]]
+}
+
+@test "--save-answers 保留答成空的题（往返等价）" {
+  local f="$BATS_TEST_TMPDIR/rt.txt"
+  run SH --set tmux.profile=custom --set tmux.plugins= --dry-run --save-answers "$f"
+  [ "$status" -eq 0 ]
+  grep -qx 'tmux.plugins=' "$f"
+}
+
 # ── 缺少参数值时说人话 ──────────────────────────────────────────
 
 @test "选项缺少参数值时给出可读报错，而不是 set -u 的未绑定变量" {
@@ -356,6 +378,17 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [ "$status" -eq 1 ]
   [[ "$output" == *"不接受值"* ]]
   [[ "$output" == *jetbrans* ]]
+}
+
+@test "执行前的 lint 报错只打印一遍" {
+  # 预检那次要连 stderr 一起丢掉：log_error 走 stderr，只挡 stdout 的话
+  # 每条报错会先漏出来一次、再被第二次完整打印，读起来像出了两个错。
+  local out="$BATS_TEST_TMPDIR/dup.sh"
+  sed 's|^step tmux.cleanup|step tmux.ghost final\nstep tmux.cleanup|' \
+    "$BATS_TEST_DIRNAME/../TMUX.sh" > "$out"
+  run env HOME="$BATS_TEST_TMPDIR/h" bash "$out" --preset recommended -y
+  [ "$status" -eq 1 ]
+  [ "$(grep -c '缺少函数 step_tmux_ghost' <<< "$output")" -eq 1 ]
 }
 
 @test "执行前会自动跑一次 lint，声明坏了不会开始安装" {

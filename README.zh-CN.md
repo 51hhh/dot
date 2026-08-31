@@ -45,7 +45,7 @@ bash TMUX.sh --preset recommended --yes
 
 - **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
 - **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、172 个 bats 测试，以及在三个发行版容器里真实安装一遍。
+  shfmt、179 个 bats 测试，以及在三个发行版容器里真实安装一遍。
   不上传 artifact、不写回分支、不提交 `dist/`。
 - **下载链接就是仓库里的那个文件：**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
@@ -187,7 +187,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-172 个 bats 测试分六层：
+179 个 bats 测试分六层：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |
@@ -257,8 +257,11 @@ run-tests.sh     # 本地 / Docker 测试入口
 - 联网只发生在三个 GitHub 项目上：`tmux/tmux`（源码编译）、
   `tmux-plugins/tpm`（插件）、`ryanoasis/nerd-fonts`（字体）。
 - 唯一的大流量步骤是字体：nerd-fonts 按字体族发包，zip 上百 MB 没得挑。
-  但只解出等宽的常规四款（约 20 MB，而非整包 233 MB），装过之后再跑就直接跳过，
-  而且它在 `final` 阶段 —— GitHub 限速不会让刚生成好的 tmux 配置作废。
-  不想装就 `--set tmux.font=skip`。
+  但只解出两个族各四个常规字重 —— `JetBrainsMono Nerd Font Mono`（终端该选的那个）
+  和 `JetBrainsMono Nerd Font`（所有文档和字体搜索框里用的名字）—— 共 8 个文件、
+  约 20 MB，而非整包 233 MB。装过之后再跑就直接跳过，而且它在 `final` 阶段 ——
+  GitHub 限速不会让刚生成好的 tmux 配置作废。不想装就 `--set tmux.font=skip`。
+  这一步会把 fontconfig 最终认到的族名原样打出来；如果设置界面已经开着，
+  需要重开应用才看得到（字体列表只在启动时读一次）。
 - `Ctrl-C` 是真的停：恢复光标并以 130 退出，不会接着跑下一个步骤。
 - `--dry-run` 保证零副作用。不确定时先跑它。

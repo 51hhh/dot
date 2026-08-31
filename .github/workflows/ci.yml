@@ -71,12 +71,29 @@ jobs:
         run: |
           bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
             --only tmux.font --yes
-          ls "$HOME/.local/share/fonts/JetBrainsMono"/*.ttf >/dev/null
-          fc-list | grep -qi 'JetBrainsMono Nerd Font'
-          # 只该解出等宽的常规四款（NL 变体同名，所以放宽到 8）。
+          dir="$HOME/.local/share/fonts/JetBrainsMono"
+          ls "$dir"/*.ttf >/dev/null
+          # 断言的是 fontconfig 认到的**族名**，不是文件名：设置里的字体选择框
+          # 列的就是族名。两个都必须在 ——
+          #   JetBrainsMono Nerd Font Mono  终端该选的那个
+          #   JetBrainsMono Nerd Font       文档和搜索框里用的名字
+          # 曾经只解 Mono 变体，于是用户搜「JetBrainsMono Nerd Font」什么都搜不到，
+          # 合理地以为字体没装上。这条断言就是防它回归。
+          fams=$(fc-list --format '%{family[0]}\n' | sort -u)
+          for f in 'JetBrainsMono Nerd Font' 'JetBrainsMono Nerd Font Mono'; do
+            grep -qxF "$f" <<< "$fams" || {
+              echo "fontconfig 里没有族名：$f"
+              grep -i jetbrains <<< "$fams" || echo "（一个 JetBrains 族都没有）"
+              exit 1
+            }
+          done
+          # 只该解出两个族各四个常规字重，正好 8 个文件。
           # 整包是 96 个 ttf / 233 MB，这条断言就是防止筛选被写坏后悄悄退回整包。
-          n=$(find "$HOME/.local/share/fonts/JetBrainsMono" -name '*.ttf' | wc -l)
-          test "$n" -le 8 || { echo "解出了 $n 个字体文件，筛选失效"; exit 1; }
+          n=$(find "$dir" -name '*.ttf' | wc -l)
+          test "$n" -eq 8 || { echo "解出了 $n 个字体文件，筛选失效"; exit 1; }
+          # 无连字的 NL 副本要被排除：它只是又两个几乎同名的族，把选择框搞乱
+          nl=$(find "$dir" -name '*NL*' | wc -l)
+          test "$nl" -eq 0 || { echo "NL 变体没被排除（$nl 个）"; exit 1; }
           # 幂等：第二次应当直接跳过，而不是再下一遍
           bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
             --only tmux.font --yes 2>&1 | grep -q '已安装'

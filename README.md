@@ -46,7 +46,7 @@ Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file th
 
 - **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
 - **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 172 bats tests, and a real install inside three
+  `--lint`, shellcheck, shfmt, 179 bats tests, and a real install inside three
   distro containers. No artifact is uploaded, no branch is written to, no
   `dist/` is committed.
 - **The download URL is just the file in the repo:**
@@ -198,7 +198,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 172 bats tests in six layers:
+images. 179 bats tests in six layers:
 
 | File | Covers | Needs |
 | --- | --- | --- |
@@ -274,10 +274,14 @@ copy of the patterns in `plan.bats`.
 - Network fetches are limited to three GitHub projects: `tmux/tmux` (source
   builds), `tmux-plugins/tpm` (plugins), `ryanoasis/nerd-fonts` (the font).
 - The font step is the only heavy download: nerd-fonts ships one asset per family,
-  so the zip is >100 MB no matter what. Only the monospaced regular/bold/italic
-  faces are extracted (~20 MB on disk instead of 233 MB), it re-runs as a no-op
-  once the family is installed, and it runs in `final` — a rate-limited GitHub
-  cannot invalidate the tmux config you just got. `--set tmux.font=skip` opts out.
+  so the zip is >100 MB no matter what. Only the regular/bold/italic/bold-italic
+  faces of two families are extracted — `JetBrainsMono Nerd Font Mono` (what a
+  terminal should be set to) and `JetBrainsMono Nerd Font` (the name every doc and
+  font picker uses) — 8 files, ~20 MB on disk instead of 233 MB. It re-runs as a
+  no-op once installed, and it runs in `final`, so a rate-limited GitHub cannot
+  invalidate the tmux config you just got. `--set tmux.font=skip` opts out.
+  The step prints the exact family names fontconfig ended up with; a picker that
+  was already open needs the app restarted, since font lists are read at startup.
 - `Ctrl-C` aborts for real. It restores the cursor and exits 130 rather than
   falling through to the next step.
 - `--dry-run` is guaranteed side-effect free. When unsure, run that first.

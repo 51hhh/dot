@@ -306,7 +306,10 @@ apply_preset() {
   for kv in "${items[@]}"; do
     k="${kv%%=*}"
     if [[ "$mode" == noclobber ]]; then
-      [[ -n "${ANS[$k]:-}" ]] && continue
+      # 判「有没有这个键」而不是「值是不是非空」：多选题答成「什么都不选」
+      # 是一个正当答案，值就是空串。按非空判的话，答案文件里写
+      # tmux.plugins=（明确表示不要插件）会被预设悄悄填回 8 个插件。
+      [[ -n "${ANS[$k]+x}" ]] && continue
       PRESET_APPLIED+=("$k")
     fi
     ANS["$k"]="${kv#*=}"
@@ -584,8 +587,15 @@ warn_answers() {
     log_warn "选了插件却没选 TPM：@plugin 声明会写进配置，但没有插件管理器去安装它们。"
     log_warn "建议同时勾选 tpm，或手动运行 prefix + I。"
   fi
-  if [[ "$(ans tmux.prefix)" == custom && -z "$(ans tmux.prefix_custom)" ]]; then
-    log_warn "前缀键选了 custom 但没填 tmux.prefix_custom，将回落到 C-b。"
+  local pc
+  pc="$(ans tmux.prefix_custom)"
+  if [[ "$(ans tmux.prefix)" == custom ]]; then
+    if [[ -z "$pc" ]]; then
+      log_warn "前缀键选了 custom 但没填 tmux.prefix_custom，将回落到 C-b。"
+    elif ! valid_prefix_key "$pc"; then
+      # 在 --dry-run 阶段就说，别等真写完配置才发现前缀根本没生效
+      log_warn "自定义前缀「$pc」不是合法的 tmux 键名，将回落到 C-b。"
+    fi
   fi
   if [[ "$(ans tmux.install)" == skip ]] && ! command -v tmux >/dev/null 2>&1; then
     log_warn "选择了跳过安装，但当前 PATH 中找不到 tmux；配置会写入但无法启动。"
@@ -731,15 +741,27 @@ git_clone_with_fallback() {
     log_error "请先安装 git（如 sudo apt-get install -y git）后重试。"
     return 1
   fi
+  local errlog
+  errlog="$(mktemp -t git-clone.XXXXXX)" || errlog=""
   while read -r prefix; do
     [[ -n "$prefix" ]] && log_warn "使用镜像克隆（第三方信任根）：${prefix}${repo}"
-    if git clone --depth 1 "${prefix}${repo}" "$dest" 2>/dev/null; then
+    # GIT_TERMINAL_PROMPT=0：镜像返回 401 时 git 会跳出来问用户名密码，
+    # 那会让一次无人值守的安装停在一个没人预料到的提示上。让它直接失败、
+    # 交给下一个源。stderr 存起来而不是丢掉：三个源全失败时得说出原因。
+    if GIT_TERMINAL_PROMPT=0 git clone --depth 1 "${prefix}${repo}" "$dest" \
+      2>"${errlog:-/dev/null}"; then
+      [[ -n "$errlog" ]] && rm -f "$errlog"
       return 0
     fi
     rm -rf "$dest"
     log_warn "克隆失败，尝试下一个源..."
   done < <(github_prefixes)
   log_error "所有源均克隆失败：$repo"
+  if [[ -s "${errlog:-}" ]]; then
+    log_error "最后一次的 git 报错："
+    tail -3 "$errlog" >&2
+  fi
+  [[ -n "$errlog" ]] && rm -f "$errlog"
   return 1
 }
 
@@ -856,13 +878,40 @@ step tmux.notes final --when tmux.profile!=uninstall --label "显示后续提示
 
 TMUX_CONF="$HOME/.tmux.conf"
 
-conf_append() { cat >>"$TMUX_CONF"; }
+# 写不进去必须是失败。重定向失败时 cat 根本不会执行、返回 1，
+# 但调用方原先紧接着就 log_ok —— 只读的 HOME 或写满的磁盘于是能跑出
+# 一屏「✓ 已配置」加退出码 0，而 ~/.tmux.conf 一个字节都没有。
+conf_append() {
+  if ! cat >>"$TMUX_CONF"; then
+    log_error "写入 $TMUX_CONF 失败（检查权限与磁盘空间）。"
+    return 1
+  fi
+}
+
+# 截断写入（只有 header 用）。和 conf_append 分开是因为 > 和 >> 语义不同，
+# 但要检查的东西一样：重定向失败时 cat 不会执行，返回 1 必须被看见。
+conf_write() {
+  if ! cat >"$TMUX_CONF"; then
+    log_error "写入 $TMUX_CONF 失败（检查权限与磁盘空间）。"
+    return 1
+  fi
+}
+
+# tmux 键名。留白、引号、分号都会让 tmux 静默忽略整行配置：
+# 实测 tmux 3.6 对 `set -g prefix foo bar` 不报错，prefix 仍是 C-b。
+valid_prefix_key() { [[ "$1" =~ ^[A-Za-z0-9-]+$ ]]; }
 
 # 解析最终生效的前缀键
 tmux_prefix_value() {
   local p
   p="$(ans tmux.prefix)"
   [[ "$p" == custom ]] && p="$(ans tmux.prefix_custom)"
+  # 自定义前缀是自由文本。不校验的话，写进去的是 foo bar、生效的是 C-b，
+  # 而「设置前缀键」这一步和结束提示都在说 foo bar —— 用户没有任何线索。
+  if [[ -n "$p" ]] && ! valid_prefix_key "$p"; then
+    log_warn "前缀键「$p」不是合法的 tmux 键名（如 C-x / M-a / F1），回落到 C-b。"
+    p=""
+  fi
   printf '%s' "${p:-C-b}"
 }
 
@@ -965,7 +1014,7 @@ step_tmux_header() {
     fi
     log_warn "已备份原配置到 $bak"
   fi
-  cat >"$TMUX_CONF" <<'EOF'
+  conf_write <<'EOF' || return 1
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  Tmux 配置 —— 由 TMUX.sh 生成
 #  请勿手工编辑：重新运行 TMUX.sh 会覆盖本文件
@@ -981,7 +1030,7 @@ EOF
 step_tmux_prefix() {
   local p
   p="$(tmux_prefix_value)"
-  conf_append <<EOF
+  conf_append <<EOF || return 1
 
 # 前缀键
 unbind C-b
@@ -992,7 +1041,7 @@ EOF
 }
 
 step_tmux_opt_mouse() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # 鼠标支持
 set -g mouse on
@@ -1001,7 +1050,7 @@ EOF
 }
 
 step_tmux_opt_vi() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # Vi 复制模式
 setw -g mode-keys vi
@@ -1014,7 +1063,7 @@ EOF
 }
 
 step_tmux_opt_index() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # 索引从 1 开始
 set -g base-index 1
@@ -1025,7 +1074,7 @@ EOF
 }
 
 step_tmux_opt_split() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # 直觉化分割：| 水平，- 垂直；Alt+方向键切换面板
 bind | split-window -h -c "#{pane_current_path}"
@@ -1041,7 +1090,7 @@ EOF
 }
 
 step_tmux_opt_reload() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # 重载配置
 bind r source-file ~/.tmux.conf \; display "配置已重载"
@@ -1074,7 +1123,7 @@ step_tmux_plugin_tpm() {
     return 1
   fi
 
-  conf_append <<EOF
+  conf_append <<EOF || return 1
 
 # ── 插件列表（TPM）────────────────────────────────
 set -g @plugin 'tmux-plugins/tpm'
@@ -1085,7 +1134,7 @@ EOF
 
 _declare_plugin() {
   local spec="$1" note="$2"
-  conf_append <<EOF
+  conf_append <<EOF || return 1
 set -g @plugin '$spec'
 EOF
   log_ok "已声明插件 $spec（$note）"
@@ -1099,7 +1148,7 @@ step_tmux_plugin_vim_navigator() { _declare_plugin 'christoomey/vim-tmux-navigat
 step_tmux_plugin_tmuxifier() { _declare_plugin 'jimeh/tmuxifier' '布局管理'; }
 
 step_tmux_plugin_catppuccin() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 set -g @plugin 'catppuccin/tmux'
 # 主题选项必须在 TPM 运行 catppuccin 之前设置
 set -g @catppuccin_flavor 'mocha'
@@ -1110,7 +1159,7 @@ EOF
 }
 
 step_tmux_status_catppuccin() {
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # Catppuccin 状态栏
 set -g status-left-length 200
@@ -1197,15 +1246,22 @@ step_tmux_font() {
   fi
 
   # 整包解出来 200 MB 以上：每个字重都有 Mono / Propo / 变宽三套，再乘 NL 变体。
-  # 终端只用得上等宽（Mono）的常规四款，约 10 MB，其余纯属占地方还拖慢 fc-cache。
+  # 只留常规四个字重，且两个族名都要留：
+  #   *NerdFontMono-*  →「X Nerd Font Mono」  终端真正该选的那个
+  #   *NerdFont-*      →「X Nerd Font」        所有文档和搜索框里用的名字
+  # 只留 Mono 的话，用户在设置里搜「JetBrainsMono Nerd Font」什么都搜不到，
+  # 会合理地以为字体没装上（这就是第一版的实际反馈）。
+  # -x '*NL*' 去掉无连字（NL）副本：它只是又两个几乎同名的族，把选择框搞乱。
   # 通配符故意不带族名前缀：Meslo 那边的文件名是 MesloLGS* 而不是 Meslo*。
   local keep=(
     '*NerdFontMono-Regular.ttf' '*NerdFontMono-Bold.ttf'
     '*NerdFontMono-Italic.ttf' '*NerdFontMono-BoldItalic.ttf'
+    '*NerdFont-Regular.ttf' '*NerdFont-Bold.ttf'
+    '*NerdFont-Italic.ttf' '*NerdFont-BoldItalic.ttf'
     '*OFL*' '*LICENSE*'
   )
   mkdir -p "$dir"
-  unzip -oq "$zip" "${keep[@]}" -d "$dir" 2>/dev/null
+  unzip -oq "$zip" "${keep[@]}" -x '*NL*' -d "$dir" 2>/dev/null
   # 故意不看 unzip 的退出码：只要有一个模式没匹配上它就退 1（warning），
   # 而 keep 里的许可证名各家不一样，本来就允许落空。
   # 真正该判断的是「到底有没有解出字体文件」—— 没有才说明上游改了命名，
@@ -1225,12 +1281,25 @@ step_tmux_font() {
       || log_warn "fc-cache 刷新失败；字体已在 $dir，重启终端后应可生效。"
   fi
   log_ok "$family 安装完成：$dir"
+  # 把 fontconfig 真正认到的族名打出来，而不是让用户去猜文件名对应什么名字。
+  # 「装好了但设置里搜不到」几乎都是搜错名字，或者应用启动早于安装。
+  local fams=""
+  if command -v fc-list >/dev/null 2>&1; then
+    fams="$(fc-list --format '%{family[0]}\n' 2>/dev/null | sort -u | grep -iF "$family" || true)"
+  fi
+  if [[ -n "$fams" ]]; then
+    log_info "终端设置里可选的字体名（照抄，别自己改写）："
+    # 族名自带空格，不能靠 printf 的参数循环去逐行打印
+    local f
+    while IFS= read -r f; do printf '      %s\n' "$f"; done <<<"$fams"
+  fi
   log_warn "还要手动把终端的字体设为「$family Mono」，图标才会显示出来。"
+  log_warn "如果设置里搜不到：先关掉再重开终端/设置（应用只在启动时读一次字体列表）。"
 }
 
 step_tmux_tpm_finalize() {
   # 必须是 tmux.conf 的最后一行
-  conf_append <<'EOF'
+  conf_append <<'EOF' || return 1
 
 # 初始化 TPM（必须保持在 tmux.conf 最末）
 run '~/.tmux/plugins/tpm/tpm'
@@ -1629,8 +1698,10 @@ save_answers() {
   {
     printf '# TMUX.sh 答案文件 —— %s\n' "$(date '+%F %T')"
     printf '# 复现：TMUX.sh --answers %s\n' "$file"
+    # 同上：答过但答成空的题也要写出来，否则「一个插件都不要」这个答案
+    # 在文件里表现为「没答过」，回放时又被预设填满 —— 往返就不再等价了。
     for id in "${QIDS[@]}"; do
-      [[ -n "${ANS[$id]:-}" ]] && printf '%s=%s\n' "$id" "${ANS[$id]}"
+      [[ -n "${ANS[$id]+x}" ]] && printf '%s=%s\n' "$id" "${ANS[$id]}"
     done
   } >>"$file"
   log_ok "答案已保存到 $file"
@@ -1728,8 +1799,10 @@ main() {
     exit 0
   }
 
-  # 声明自洽性是执行前提，始终先查一遍
-  run_lint >/dev/null || {
+  # 声明自洽性是执行前提，始终先查一遍。
+  # 第一遍连 stderr 一起丢掉：log_error 走的是 stderr，只挡 stdout 的话
+  # 每条 lint 报错都会被打印两遍（先漏出来一次，再由第二遍完整打印）。
+  run_lint >/dev/null 2>&1 || {
     run_lint
     exit 1
   }
