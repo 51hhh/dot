@@ -1,7 +1,7 @@
 <h1 align="center">dot</h1>
 
 <p align="center">
-  终端环境一键配置脚本 —— 纯 Bash，单文件，可测试。
+  Interactive terminal setup, in pure Bash. Single file, no build step, testable.
 </p>
 
 <p align="center">
@@ -10,57 +10,88 @@
   </a>
 </p>
 
+<p align="center">
+  <b>English</b> · <a href="README.zh-CN.md">简体中文</a>
+</p>
+
 ---
 
-## 快速开始
+## Quick start
 
 ```bash
-# 交互式（推荐首次使用）
+# Interactive
 bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh)
 
-# 或者先下载再看一眼，再执行
+# Classic pipe — also works, input is read from /dev/tty, not stdin
+curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh | bash
+
+# Read before you run (recommended)
 curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh -o TMUX.sh
-less TMUX.sh
-bash TMUX.sh
+less TMUX.sh && bash TMUX.sh
 ```
 
-非交互（CI、批量部署、重装机器）：
+Non-interactive — CI, provisioning, reinstalls:
 
 ```bash
 bash TMUX.sh --preset recommended --yes
 ```
 
-> **要求：bash ≥ 4.2。** 脚本大量使用关联数组和 `declare -g`（后者是 4.2 引入的），
-> 启动时会检查版本并给出提示。macOS 自带 bash 3.2，需要 `brew install bash`。
+> **Requires bash ≥ 4.2.** The script leans on associative arrays and `declare -g`
+> (the latter landed in 4.2). It checks the version at startup and tells you.
+> macOS ships bash 3.2 — `brew install bash` first.
 
-## 它做什么
+## There is no build step
 
-`TMUX.sh` 交互式安装并配置 tmux：安装方式（apt / 源码编译 / 跳过）、前缀键、
-8 个常用插件（TPM、sensible、yank、cpu、battery、Catppuccin、vim-tmux-navigator、tmuxifier）、
-5 项基础配置（鼠标、Vi 复制模式、索引从 1、直觉化分割键、prefix+r 重载），
-以及完整卸载。选「推荐配置」则一步到位，展开为 20 个步骤。
+Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file that runs.
 
-## 架构
+- **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
+- **CI does not produce a script.** It only verifies: `bash -n`, the script's own
+  `--lint`, shellcheck, shfmt, 137 bats tests, and a real install inside three
+  distro containers. No artifact is uploaded, no branch is written to, no
+  `dist/` is committed.
+- **The download URL is just the file in the repo:**
+  `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
 
-整个脚本是一条单向管道，四段之间只用**数据**衔接：
+The previous architecture did have a build (TypeScript → a generated `dist/dot.sh`,
+assembled from YAML configs plus ~80 template fragments, published to a web host).
+That indirection was the main source of its pain: what you downloaded was not what
+anyone had read, a bug meant bisecting the generator instead of the script, and
+`curl | bash` required the whole pipeline to have run correctly first. Removing the
+generator removed a whole class of failure — so a build step is not a feature that
+is missing here, it is one that was taken out.
+
+## What it does
+
+`TMUX.sh` installs and configures tmux: install method (apt / build from source /
+skip), prefix key, 8 common plugins (TPM, sensible, yank, cpu, battery, Catppuccin,
+vim-tmux-navigator, tmuxifier), 5 base options (mouse, Vi copy mode, 1-based
+indexing, intuitive splits, `prefix+r` reload), and a full uninstall. Picking
+**recommended** expands to a 20-step plan in one keystroke.
+
+## Architecture
+
+One directed pipeline. The four stages are joined only by **data**:
 
 ```
 ASK  ──►  answers  ──►  PLAN  ──►  RUN
-交互      纯 k=v 数据    纯函数     副作用
-需要 TTY   可序列化      可测试     装包 / 写文件
+prompts   plain k=v     pure fn    side effects
+needs TTY serializable  testable   installs / writes files
 ```
 
-关键在于 `answers` 这个中间层。它是一张 `key=value` 表，能存成文件、能用 `--set`
-从命令行喂进去。于是：
+Everything follows from `answers` being an ordinary key/value table that can be
+written to a file or supplied with `--set`:
 
-- **计划是纯函数。** `build_plan` 只读 `answers`、只写 `PLAN` 数组，不输出、不碰磁盘。
-  测「选了这些答案会做哪些事」不需要 TTY、不需要 root、不需要联网、不需要 Docker，毫秒级。
-- **任何 bug 都能一条命令复现。** 用户把 `--save-answers` 出来的文件发过来，
-  你 `--answers that-file --dry-run` 就得到一模一样的计划。不用再问「你当时点了什么」。
+- **Planning is a pure function.** `build_plan` reads `answers`, writes the `PLAN`
+  array, and does nothing else — no output, no disk. Testing "given these answers,
+  what would it do" needs no TTY, no root, no network, no Docker. Milliseconds.
+- **Every bug reproduces in one command.** A user sends the file from
+  `--save-answers`; `--answers that-file --dry-run` yields byte-identical results.
+  No more "what did you click?".
 
-### 五个声明原语
+### Four declaration primitives
 
-产品逻辑全部集中在 §8「声明」一节，约 40 行。加功能改这里，不动引擎。
+The entire product surface lives in §8, about 40 lines. Add features there; the
+engine stays untouched.
 
 ```bash
 recipe "Tmux 一键配置" "安装方式、前缀键、插件、基础选项"
@@ -71,7 +102,7 @@ ask one  tmux.install "安装方式" --when tmux.profile=custom \
   skip:"已装好，跳过安装"
 
 ask text tmux.source_version "要编译的 tmux 版本" \
-  --when tmux.install=source --default 3.4
+  --when tmux.profile=custom --when tmux.install=source --default 3.4
 
 step tmux.opt.mouse configure \
   --when tmux.profile!=uninstall --when tmux.options~mouse \
@@ -82,144 +113,155 @@ preset recommended --when tmux.profile=recommended \
   tmux.plugins="tpm sensible yank cpu battery catppuccin vim-navigator tmuxifier"
 ```
 
-| 原语 | 作用 |
+| Primitive | Meaning |
 | --- | --- |
-| `recipe <标题> <描述>` | 首屏信息 |
-| `ask one\|many\|text\|number <key> <提示> [--when E] [--default V] [k:描述...]` | 一个问题 = 一个 answers key |
-| `step <id> <阶段> [--when E] [--label 文本]` | 一个步骤，函数体是 `step_<id>`（点和横线换成下划线） |
-| `preset <名字> [--when E] k=v...` | 一组答案，不覆盖用户已显式给出的值 |
+| `recipe <title> <desc>` | Header shown on every screen |
+| `ask one\|many\|text\|number <key> <label> [--when E] [--default V] [k:desc...]` | One question ⇒ one answers key |
+| `step <id> <phase> [--when E] [--label T]` | One step; its body is `step_<id>` with `.` and `-` mapped to `_` |
+| `preset <name> [--when E] k=v...` | A bundle of answers; never overwrites what the user explicitly chose |
 
-### 四个阶段，没有依赖图
+### Four phases, no dependency graph
 
 ```
 prepare  →  install  →  configure  →  final
 ```
 
-步骤在阶段内按声明顺序执行，阶段之间固定顺序。**没有拓扑排序、没有依赖边、没有环检测。**
-旧架构用 13 种依赖类型表达「TPM 初始化必须最后跑」，新架构就是把它声明成 `final`。
-`prepare` / `install` 里的步骤失败会中止后续；`configure` / `final` 失败只告警并继续。
+Steps run in declaration order within a phase; phases run in fixed order. **No
+topological sort, no dependency edges, no cycle detection.** The old architecture
+needed 13 dependency types to express "TPM init must run last"; here you declare
+it `final`. A failure in `prepare`/`install` aborts what remains; a failure in
+`configure`/`final` warns and continues.
 
-### `when` 表达式：四个算子，没有解析器
+### `when`: four operators, no parser
 
-| 写法 | 含义 |
+| Form | Meaning |
 | --- | --- |
-| `key=value` | 相等 |
-| `key!=value` | 不等（**键不存在时成立**，所以 `tmux.profile!=uninstall` 对未作答也生效） |
-| `key~word` | 多选题按整词包含（`tmuxifier` 不会被 `~tmux` 命中） |
-| `key` | 非空 |
+| `key=value` | equals |
+| `key!=value` | not equal — **true when the key is unset**, which is what makes `tmux.profile!=uninstall` work before anything is answered |
+| `key~word` | whole-word membership in a multi-select answer (`~tmux` does not match `tmuxifier`) |
+| `key` | non-empty |
 
-不支持嵌套、不支持 `and` / `or` 关键字、没有优先级。需要 AND 就**重复 `--when`**，
-全部成立才算成立。需要 OR 就写两个 `step`——这比让阅读者在脑子里跑一遍布尔求值更便宜。
+No nesting, no `and`/`or` keywords, no precedence. For AND, **repeat `--when`** —
+all must hold. For OR, declare two steps. That is cheaper than making the reader
+evaluate a boolean expression in their head.
 
-刻意**不提供**的能力：隐藏问题、提前结束流程。它们在这个模型里根本无法表达，
-所以不需要写校验去禁止。
+Deliberately **not** expressible: hiding a question, ending the flow early. They
+cannot be written down in this model, so there is no validation rule forbidding them.
 
-### 导航用 history 栈，不是索引 ±1
+### Navigation is a history stack, not `index ± 1`
 
-因为 `when` 会让「可见问题列表」随答案变化：选 `custom` 有 5 个问题，
-改成 `recommended` 只剩 1 个。用索引往回退会指向一个已经不存在的问题。
-所以 `run_ask` 维护一个 `HIST` 栈，回退就是弹栈，然后重新计算可见列表。
+`when` makes the visible-question list change shape as answers change: `custom`
+shows 5 questions, `recommended` shows 1. Stepping back by index would land on a
+question that no longer exists. So `run_ask` keeps a `HIST` stack — going back pops
+it, then the visible list is recomputed.
 
-回退**保留**已答的答案（这样改完一个选项不用重答全部），但会撤销
-`preset` 自动套用的值（`clear_preset_keys`），否则从「推荐」退回去改成「自定义」
-会带着一堆你没选过的插件。
+Going back **keeps** the answers you already gave, but undoes values a `preset`
+applied automatically (`clear_preset_keys`) — otherwise backing out of
+"recommended" into "custom" drags along eight plugins you never picked.
 
-## 命令行
+## Command line
 
-| 参数 | 说明 |
+| Flag | Effect |
 | --- | --- |
-| `--preset <名字>` | 套用预设答案 |
-| `--set k=v` | 单独设置一个答案（在 argv 里出现得越晚优先级越高，可覆盖 `--preset`） |
-| `--answers <文件>` | 从文件读答案（支持 `#` 注释与空行） |
-| `--save-answers <文件>` | 把最终答案写出来，用于复现与提 issue |
-| `--only <步骤id>` | 只跑指定步骤，可重复；保留原计划顺序 |
-| `--dry-run` | 只打印计划，不执行任何副作用 |
-| `--list` | 列出全部问题与步骤及其 `when` 条件 |
-| `--lint` | 自检声明（执行前会自动跑一次） |
-| `--mirror <前缀>` | 追加一个 GitHub 镜像前缀 |
-| `-y, --yes` | 跳过确认页 |
+| `--preset <name>` | Apply a preset |
+| `--set k=v` | Set one answer; later occurrences win, so it overrides `--preset`. Unknown keys are a hard error |
+| `--answers <file>` | Read answers from a file (`#` comments and blank lines allowed) |
+| `--save-answers <file>` | Write the final answers out, for reproduction and bug reports |
+| `--only <step-id>` | Run only these steps, repeatable; plan order preserved |
+| `--dry-run` | Print the plan, execute nothing |
+| `--list` | List every question and step with its `when` conditions |
+| `--lint` | Check the declarations (also runs automatically before any execution) |
+| `--mirror <prefix>` | Add a GitHub mirror prefix |
+| `-y, --yes` | Skip the confirmation screen |
 
-### 调试工作流
+### Debugging workflow
 
 ```bash
-# 1. 用户复现问题后导出答案
+# 1. The reporter exports their answers
 bash TMUX.sh --save-answers bug.txt
 
-# 2. 你本地看它会做什么 —— 不动系统
+# 2. You see exactly what it would do — nothing is touched
 bash TMUX.sh --answers bug.txt --dry-run
 
-# 3. 只跑可疑的那一步
+# 3. Run just the suspect step
 bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
-## 测试
+## Testing
 
 ```bash
-./run-tests.sh          # 全部
+./run-tests.sh          # everything
 ./run-tests.sh lint     # bash -n + --lint + shellcheck
-./run-tests.sh bats     # 行为测试
-./run-tests.sh fmt      # shfmt 格式检查
+./run-tests.sh bats     # behaviour
+./run-tests.sh fmt      # shfmt, in place
 ```
 
-本地有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-128 个 bats 测试分五层：
+Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
+images. 137 bats tests in five layers:
 
-| 文件 | 测什么 | 需要 |
+| File | Covers | Needs |
 | --- | --- | --- |
-| `tests/when.bats` | 四个算子的真值表 + AND 组合 | 无 |
-| `tests/plan.bats` | 答案 → 计划，阶段顺序、预设、互斥 | 无 |
-| `tests/conf.bats` | 生成的 `~/.tmux.conf` 内容与幂等性 | 临时 HOME |
-| `tests/cli.bats` | 参数解析、错误退出码、lint 反例 | 无 |
-| `tests/ask.bats` | 交互导航，靠 `DOT_INPUT_FD` 注入按键 | 无 |
+| `tests/when.bats` | truth table for all four operators, plus AND composition | nothing |
+| `tests/plan.bats` | answers → plan: phase order, presets, mutual exclusion | nothing |
+| `tests/conf.bats` | the generated `~/.tmux.conf`, and idempotence | a temp HOME |
+| `tests/cli.bats` | flag parsing, exit codes, `curl \| bash`, lint negatives | nothing |
+| `tests/ask.bats` | interactive navigation, keystrokes injected via `DOT_INPUT_FD` | nothing |
 
-只有 `conf.bats` 碰文件系统，且全在 `$BATS_TEST_TMPDIR` 里。
-交互测试通过 `DOT_INPUT_FD` 把按键序列从一个普通 fd 喂进去，不需要 pty：
+Only `conf.bats` touches the filesystem, entirely inside `$BATS_TEST_TMPDIR`.
+Interactive tests need no pty — keystrokes are fed through a plain fd:
 
 ```bash
-exec 7< <(printf '\033[B\r')      # 下移一次 + 回车
+exec 7< <(printf '\033[B\r')      # down once, then Enter
 DOT_INPUT_FD=7 bash TMUX.sh --save-answers out.txt
 ```
 
-## 文件结构
+## Layout
 
 ```
-TMUX.sh          # 全部实现，按 §1..§11 分节
-├─ §1  core      # 版本闸门、颜色、日志、sudo
-├─ §2  tty       # 输入探测、单一读取路径、光标控制
-├─ §3  registry  # Q / S / ANS 关联数组与注册函数
-├─ §4  ask       # history 栈导航、四种问题渲染
-├─ §5  plan      # when 求值、build_plan（纯）、warn_answers
-├─ §6  run       # 按阶段执行、失败策略、结果汇总
-├─ §7  net       # GitHub 镜像回落、curl/wget 与 git clone 回落
-├─ §8  declare   # ★ 产品逻辑全在这里（问题、预设、步骤声明）
-├─ §9  steps     # 每个 step_* 函数体
-├─ §10 lint      # 声明自检
-└─ §11 cli       # 参数解析与 main
-tests/*.bats     # 五层测试
-run-tests.sh     # 本地/Docker 测试入口
+TMUX.sh          # the whole implementation, sectioned §1..§11
+├─ §1  core      # version gate, colours, logging, sudo
+├─ §2  tty       # input probing, one read path, cursor control
+├─ §3  registry  # the Q / S / ANS tables and their registrars
+├─ §4  ask       # history-stack navigation, four question renderers
+├─ §5  plan      # when evaluation, build_plan (pure), warn_answers
+├─ §6  run       # phase execution, failure policy, summary
+├─ §7  net       # GitHub mirror fallback, curl/wget and git clone fallback
+├─ §8  declare   # ★ all product logic: questions, presets, steps
+├─ §9  steps     # one step_* function per step
+├─ §10 lint      # declaration self-check
+└─ §11 cli       # argument parsing and main
+tests/*.bats     # the five layers
+run-tests.sh     # local / Docker test entry point
 ```
 
-分节编号与将来可能的 `lib/` 拆分一一对应。目前保持单文件，因为
-`curl | bash` 是主要分发方式——多文件就得先打包再合并，那正是上一版架构复杂度的来源。
+Section numbers map 1:1 onto a possible future `lib/` split. It stays one file
+because `curl | bash` is the primary distribution channel — multiple files would
+need packaging and concatenation, which is precisely where the previous
+architecture's complexity came from.
 
-## 加一个新配方
+## Adding a recipe
 
-以 zsh 为例，需要动两处：
+For zsh, say, you touch two places:
 
-1. **§8 声明**：`ask` 出问题、`step` 出步骤、`preset` 出推荐组合。
-2. **§9 实现**：为每个 step 写 `step_<id>` 函数。
+1. **§8 declare** — `ask` for the questions, `step` for the work, `preset` for a
+   recommended bundle.
+2. **§9 steps** — one `step_<id>` function per step.
 
-然后 `--lint` 会告诉你有没有引用未声明的 key、有没有 step 缺函数体、
-有没有写错阶段名。计划层的测试基本靠复制 `plan.bats` 的模式。
+Then `--lint` tells you about `when` clauses referencing undeclared keys, steps
+missing a function body, and illegal phase names. Plan-layer tests are mostly a
+copy of the patterns in `plan.bats`.
 
-> 旧架构里的 zsh（23 个模板）与 ssh（25 个模板）脚本片段保存在提交 `16d6670`，
-> 移植时可以直接取用：`git show 16d6670:templates/zsh/zshrc-recommended.sh`
+> The old architecture's zsh (23 fragments) and ssh (25 fragments) shell snippets
+> are preserved in commit `16d6670` and can be lifted directly:
+> `git show 16d6670:templates/zsh/zshrc-recommended.sh`
 
-## 安全说明
+## Security notes
 
-- 安装 tmux、写 `/etc` 之外的配置需要 `sudo`，脚本只在必要的步骤调用，
-  且都经过 `dot_sudo` 这一个入口，`grep dot_sudo TMUX.sh` 能看全。
-- 覆盖 `~/.tmux.conf` 前会备份为 `~/.tmux.conf.bak.<时间戳>`。
-- `--mirror` / `DOT_GITHUB_MIRRORS` 引入的镜像是**第三方信任根**，
-  脚本不做校验和/签名验证。默认直连 GitHub，镜像需显式开启。
-- `--dry-run` 保证零副作用，不确定时先跑它。
+- Installing tmux needs `sudo`. It is only invoked where required and always
+  through one entry point — `grep dot_sudo TMUX.sh` shows every use.
+- `~/.tmux.conf` is backed up to `~/.tmux.conf.bak.<timestamp>` before being
+  overwritten.
+- Mirrors added via `--mirror` / `DOT_GITHUB_MIRRORS` are a **third-party trust
+  root**; the script does no checksum or signature verification. GitHub is
+  contacted directly by default and mirrors are strictly opt-in.
+- `--dry-run` is guaranteed side-effect free. When unsure, run that first.

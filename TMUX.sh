@@ -37,13 +37,19 @@ if [[ -z "${BASH_VERSINFO:-}" ]] \
   exit 1
 fi
 
-RED=$'\033[0;31m'
-GREEN=$'\033[0;32m'
-YELLOW=$'\033[1;33m'
-CYAN=$'\033[0;36m'
-BOLD=$'\033[1m'
-DIM=$'\033[2m'
-NC=$'\033[0m'
+# stdout 不是终端时一律不上色：否则 `curl … | bash | tee log`、
+# 重定向和测试框架抓到的输出里会混进转义序列。
+if [[ -t 1 ]]; then
+  RED=$'\033[0;31m'
+  GREEN=$'\033[0;32m'
+  YELLOW=$'\033[1;33m'
+  CYAN=$'\033[0;36m'
+  BOLD=$'\033[1m'
+  DIM=$'\033[2m'
+  NC=$'\033[0m'
+else
+  RED='' GREEN='' YELLOW='' CYAN='' BOLD='' DIM='' NC=''
+fi
 
 log_info() { printf '%b[*]%b %s\n' "$CYAN" "$NC" "$*"; }
 log_ok() { printf '%b[+]%b %s\n' "$GREEN" "$NC" "$*"; }
@@ -246,7 +252,7 @@ preset() {
   while (($#)); do
     case "$1" in
       --when)
-        when="$2"
+        when="$(when_add "$when" "$2")" # 与 ask/step 一致：可重复，语义是 AND
         shift 2
         ;;
       *)
@@ -318,86 +324,6 @@ clear_preset_keys() {
     unset "ANS[$k]"
   done
   PRESET_APPLIED=()
-}
-
-# ══════════════════════════════════════════════════════════════════
-# §5 plan  —— 纯函数：不读 TTY、不碰文件、不联网
-# ══════════════════════════════════════════════════════════════════
-#
-# when 表达式只有 4 种形式，不嵌套、无优先级、无解析器：
-#   key=value    相等
-#   key!=value   不等
-#   key~value    多选包含
-#   key          非空
-
-when_ok() {
-  local e="$1" k v
-  [[ -z "$e" ]] && return 0
-  if [[ "$e" == *'!='* ]]; then
-    k="${e%%!=*}"
-    v="${e#*!=}"
-    [[ "$(ans "$k")" != "$v" ]]
-  elif [[ "$e" == *'~'* ]]; then
-    k="${e%%\~*}"
-    v="${e#*\~}"
-    has_word "$(ans "$k")" "$v"
-  elif [[ "$e" == *'='* ]]; then
-    k="${e%%=*}"
-    v="${e#*=}"
-    [[ "$(ans "$k")" == "$v" ]]
-  else
-    [[ -n "$(ans "$e")" ]]
-  fi
-}
-
-# 多个 when 全部成立才算成立（AND）
-when_all() {
-  local joined="$1" e exprs=()
-  [[ -z "$joined" ]] && return 0
-  IFS="$US" read -r -a exprs <<<"$joined"
-  for e in "${exprs[@]}"; do
-    when_ok "$e" || return 1
-  done
-  return 0
-}
-
-PLAN=()
-
-build_plan() {
-  PLAN=()
-  local ph id
-  for ph in "${PHASES[@]}"; do
-    for id in "${SIDS[@]}"; do
-      [[ "${S["$id.phase"]}" == "$ph" ]] || continue
-      when_all "${S["$id.when"]}" && PLAN+=("$id")
-    done
-  done
-  return 0 # 「最后一个步骤不命中」不是错误，否则 set -e 下会误判失败
-}
-
-# 答案层面的语义提醒。刻意放在 build_plan 之外：
-# build_plan 保持纯函数（无输出、无副作用），提醒是独立的一层。
-warn_answers() {
-  local plugins
-  plugins="$(ans tmux.plugins)"
-  if [[ -n "$plugins" ]] && ! has_word " $plugins " tpm; then
-    log_warn "选了插件却没选 TPM：@plugin 声明会写进配置，但没有插件管理器去安装它们。"
-    log_warn "建议同时勾选 tpm，或手动运行 prefix + I。"
-  fi
-  if [[ "$(ans tmux.prefix)" == custom && -z "$(ans tmux.prefix_custom)" ]]; then
-    log_warn "前缀键选了 custom 但没填 tmux.prefix_custom，将回落到 C-b。"
-  fi
-  if [[ "$(ans tmux.install)" == skip ]] && ! command -v tmux >/dev/null 2>&1; then
-    log_warn "选择了跳过安装，但当前 PATH 中找不到 tmux；配置会写入但无法启动。"
-  fi
-}
-
-visible_questions() {
-  local id
-  for id in "${QIDS[@]}"; do
-    when_all "${Q["$id.when"]}" && printf '%s\n' "$id"
-  done
-  return 0 # 同 build_plan：末项不可见不代表失败
 }
 
 # ══════════════════════════════════════════════════════════════════
@@ -583,11 +509,89 @@ confirm_plan() {
   case "$key" in
     '') return 0 ;;
     q | Q) return 1 ;;
-    *)
-      is_back_key "$key" && return 2
-      return 2
-      ;;
+    # 确认页只有三种出路，误按任何其他键都回到改答案，比原地卡住友好
+    *) return 2 ;;
   esac
+}
+
+# ══════════════════════════════════════════════════════════════════
+# §5 plan  —— 纯函数：不读 TTY、不碰文件、不联网
+# ══════════════════════════════════════════════════════════════════
+#
+# when 表达式只有 4 种形式，不嵌套、无优先级、无解析器：
+#   key=value    相等
+#   key!=value   不等
+#   key~value    多选包含
+#   key          非空
+
+when_ok() {
+  local e="$1" k v
+  [[ -z "$e" ]] && return 0
+  if [[ "$e" == *'!='* ]]; then
+    k="${e%%!=*}"
+    v="${e#*!=}"
+    [[ "$(ans "$k")" != "$v" ]]
+  elif [[ "$e" == *'~'* ]]; then
+    k="${e%%\~*}"
+    v="${e#*\~}"
+    has_word "$(ans "$k")" "$v"
+  elif [[ "$e" == *'='* ]]; then
+    k="${e%%=*}"
+    v="${e#*=}"
+    [[ "$(ans "$k")" == "$v" ]]
+  else
+    [[ -n "$(ans "$e")" ]]
+  fi
+}
+
+# 多个 when 全部成立才算成立（AND）
+when_all() {
+  local joined="$1" e exprs=()
+  [[ -z "$joined" ]] && return 0
+  IFS="$US" read -r -a exprs <<<"$joined"
+  for e in "${exprs[@]}"; do
+    when_ok "$e" || return 1
+  done
+  return 0
+}
+
+PLAN=()
+
+build_plan() {
+  PLAN=()
+  local ph id
+  for ph in "${PHASES[@]}"; do
+    for id in "${SIDS[@]}"; do
+      [[ "${S["$id.phase"]}" == "$ph" ]] || continue
+      when_all "${S["$id.when"]}" && PLAN+=("$id")
+    done
+  done
+  return 0 # 「最后一个步骤不命中」不是错误，否则 set -e 下会误判失败
+}
+
+# 答案层面的语义提醒。刻意放在 build_plan 之外：
+# build_plan 保持纯函数（无输出、无副作用），提醒是独立的一层。
+warn_answers() {
+  local plugins
+  plugins="$(ans tmux.plugins)"
+  if [[ -n "$plugins" ]] && ! has_word " $plugins " tpm; then
+    log_warn "选了插件却没选 TPM：@plugin 声明会写进配置，但没有插件管理器去安装它们。"
+    log_warn "建议同时勾选 tpm，或手动运行 prefix + I。"
+  fi
+  if [[ "$(ans tmux.prefix)" == custom && -z "$(ans tmux.prefix_custom)" ]]; then
+    log_warn "前缀键选了 custom 但没填 tmux.prefix_custom，将回落到 C-b。"
+  fi
+  if [[ "$(ans tmux.install)" == skip ]] && ! command -v tmux >/dev/null 2>&1; then
+    log_warn "选择了跳过安装，但当前 PATH 中找不到 tmux；配置会写入但无法启动。"
+  fi
+}
+
+visible_questions() {
+  local id
+  for id in "${QIDS[@]}"; do
+    when_all "${Q["$id.when"]}" && printf '%s\n' "$id"
+  done
+  return 0 # 同 build_plan：末项不可见不代表失败
 }
 
 # ══════════════════════════════════════════════════════════════════
@@ -733,8 +737,11 @@ ask one tmux.install "安装方式" --when tmux.profile=custom \
   source:"源码编译（最新版，需编译环境）" \
   skip:"已装好，跳过安装"
 
+# 子问题必须同时锁 profile=custom，不能只锁父答案：
+# 交互中「选 custom 答到一半、回退改成 uninstall」会留下 tmux.install=source，
+# 只锁父答案的话，卸载流程里会冒出「要编译的 tmux 版本」这种无意义的问题。
 ask text tmux.source_version "要编译的 tmux 版本" \
-  --when tmux.install=source --default 3.4
+  --when tmux.profile=custom --when tmux.install=source --default 3.4
 
 ask one tmux.prefix "前缀键" --when tmux.profile=custom --default C-b \
   C-Space:"Ctrl+Space（推荐配置同款）" \
@@ -743,8 +750,9 @@ ask one tmux.prefix "前缀键" --when tmux.profile=custom --default C-b \
   custom:"自定义（下一步输入）"
 
 # 条件链：上一题选 custom 才出现。旧架构为此需要一层嵌套 flow。
+# 同上，profile 也要锁住（否则残留的 tmux.prefix=custom 会污染卸载流程）。
 ask text tmux.prefix_custom "自定义前缀键（tmux 语法，如 C-x）" \
-  --when tmux.prefix=custom --default C-x
+  --when tmux.profile=custom --when tmux.prefix=custom --default C-x
 
 ask many tmux.plugins "插件（需 TPM）" --when tmux.profile=custom \
   tpm:"TPM 插件管理器（其他插件的前提）" \
@@ -1086,7 +1094,14 @@ EOF
   fi
 
   log_info "预装插件（可能需要一两分钟）..."
-  local log=/tmp/tpm-install.log
+  # 用 mktemp 而不是固定的 /tmp/tpm-install.log：
+  # /tmp 是所有用户可写的，固定名字可被他人预先建成符号链接，
+  # 写日志时就会跟着链接去覆盖别的文件。
+  local log
+  log="$(mktemp -t tpm-install.XXXXXX)" || {
+    log_warn "无法创建临时日志文件，跳过插件预装；请在 tmux 内按 prefix + I。"
+    return 0
+  }
   if "$installer" >"$log" 2>&1; then
     if grep -qiE 'fatal|error|failed' "$log"; then
       log_warn "部分插件可能克隆失败（多见于 GitHub 限速）。完整日志：$log"
@@ -1350,6 +1365,17 @@ list_declarations() {
   done
 }
 
+# 答案 key 必须是已声明的问题。
+# 少了这道检查，`--set tmux.plugin=tpm`（漏个 s）会被静默接受、
+# 计划里一个插件都没有，而这正是最难自己发现的一类问题。
+require_question_key() {
+  local k="$1" src="$2"
+  is_question "$k" && return 0
+  log_error "$src：未声明的答案 key「$k」"
+  log_error "用 --list 查看全部可用 key。"
+  return 1
+}
+
 load_answers() {
   local file="$1" line k v n=0
   [[ -r "$file" ]] || {
@@ -1367,6 +1393,7 @@ load_answers() {
     }
     k="${line%%=*}"
     v="${line#*=}"
+    require_question_key "$k" "$file 第 $((n + 1)) 行" || return 1
     ANS["$k"]="$v"
     n=$((n + 1))
   done <"$file"
@@ -1404,6 +1431,7 @@ main() {
         ;;
       --set)
         [[ "$2" == *=* ]] || die "--set 需要 key=值 形式，收到：$2"
+        require_question_key "${2%%=*}" "--set" || exit 1
         ANS["${2%%=*}"]="${2#*=}"
         interactive=0
         shift 2
@@ -1549,7 +1577,13 @@ main() {
   run_plan
 }
 
-# 被 source 时不执行（测试可直接调用 when_ok / build_plan 等纯函数）
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+# 被 source 时不执行（测试可直接调用 when_ok / build_plan 等纯函数）。
+#
+# ${BASH_SOURCE[0]:-$0} 里的回落不是防御性冗余，它是 curl | bash 能跑起来的唯一原因：
+#   直接执行  BASH_SOURCE[0]=./TMUX.sh  $0=./TMUX.sh  → 相等，执行
+#   管道执行  BASH_SOURCE[0] 未设置      $0=bash       → 回落后相等，执行
+#   被 source BASH_SOURCE[0]=TMUX.sh    $0=bash/bats  → 不等，不执行
+# 少了这个回落，set -u 会在管道场景直接报「未绑定的变量」。
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then
   main "$@"
 fi

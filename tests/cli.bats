@@ -14,11 +14,46 @@ broken() {
   bash "$out" --lint 2>&1
 }
 
+# 模拟 curl | bash：脚本从 stdin 进 bash，参数走 -s --
+PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
+
 # ── 基本契约 ─────────────────────────────────────────────────────
 
 @test "语法自检通过" {
   run bash -n "$BATS_TEST_DIRNAME/../TMUX.sh"
   [ "$status" -eq 0 ]
+}
+
+# ── curl | bash（主分发路径）─────────────────────────────────────
+#
+# 管道执行时 BASH_SOURCE[0] 未设置、$0 是 "bash"。文件末尾的执行守卫
+# 必须写成 ${BASH_SOURCE[0]:-$0}，否则：set -u 报「未绑定的变量」，
+# 或者（无 set -u 时）main 根本不被调用、脚本静默退出 0 什么都不做。
+
+@test "管道执行（curl | bash）会真的跑起来" {
+  run PIPED --lint
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"lint 通过"* ]]
+}
+
+@test "管道执行时参数正常传入" {
+  run PIPED --preset recommended --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *tmux.tpm.finalize* ]]
+}
+
+@test "管道执行不会因 set -u 报未绑定变量" {
+  run PIPED --preset recommended --dry-run
+  [[ "$output" != *"BASH_SOURCE"* ]]
+  [[ "$output" != *"unbound variable"* ]]
+  [[ "$output" != *"未绑定的变量"* ]]
+}
+
+@test "被 source 时不执行 main" {
+  # 若守卫写错方向，source 会触发整套交互/安装
+  run bash -c "source '$BATS_TEST_DIRNAME/../TMUX.sh'; echo SOURCED_OK"
+  [ "$status" -eq 0 ]
+  [ "${lines[-1]}" = "SOURCED_OK" ]
 }
 
 @test "--lint 在未改动的脚本上通过" {
@@ -85,6 +120,40 @@ broken() {
   run SH --answers "$f" --dry-run
   [ "$status" -eq 1 ]
   [[ "$output" == *"格式错误"* ]]
+}
+
+# ── 答案 key 拼错必须报错，不能静默 ──────────────────────────────
+#
+# 少个 s 的 tmux.plugin 曾经会被接受、计划里一个插件都没有。
+# 这类「什么都没发生」的失败最难自己查出来，所以必须硬报错。
+
+@test "--set 用了未声明的 key 时报错退出" {
+  run SH --set tmux.plugin=tpm --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"未声明的答案 key"* ]]
+  [[ "$output" == *"tmux.plugin"* ]]
+}
+
+@test "答案文件里未声明的 key 也报错退出" {
+  local f="$BATS_TEST_TMPDIR/typo.txt"
+  printf 'tmux.profile=custom\ntmux.opitons=mouse\n' > "$f"
+  run SH --answers "$f" --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"未声明的答案 key"* ]]
+}
+
+@test "拼对的 key 不受影响" {
+  run SH --set tmux.profile=custom --set tmux.plugins="tpm yank" --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" == *tmux.plugin.tpm* ]]
+  [[ "$output" == *tmux.plugin.yank* ]]
+}
+
+# ── 非终端输出不带颜色 ───────────────────────────────────────────
+
+@test "输出被重定向时不含 ANSI 转义序列" {
+  run SH --preset recommended --dry-run
+  [[ "$output" != *$'\033'* ]]
 }
 
 @test "答案文件不存在时报错退出" {

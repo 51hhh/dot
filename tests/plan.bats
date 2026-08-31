@@ -103,6 +103,17 @@ plan_of() {
   [ "${PLAN[*]}" = "tmux.uninstall" ]
 }
 
+@test "uninstall 时不会冒出自定义流程的子问题" {
+  # 「选 custom 答到一半、回退改成 uninstall」会留下这些答案。
+  # 子问题只锁父答案（tmux.install=source）是不够的，必须同时锁 profile。
+  ANS[tmux.profile]=uninstall
+  ANS[tmux.install]=source
+  ANS[tmux.prefix]=custom
+  run visible_questions
+  [ "${#lines[@]}" -eq 1 ]
+  [ "${lines[0]}" = "tmux.profile" ]
+}
+
 @test "uninstall 时即使答案里残留插件也不会写配置" {
   # 交互中「先选 custom 答完插件、回退再改成 uninstall」会留下这些答案，
   # 全靠每个配置步骤的 --when tmux.profile!=uninstall 挡住。
