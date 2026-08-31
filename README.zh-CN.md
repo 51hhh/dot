@@ -45,7 +45,7 @@ bash TMUX.sh --preset recommended --yes
 
 - **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
 - **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、137 个 bats 测试，以及在三个发行版容器里真实安装一遍。
+  shfmt、172 个 bats 测试，以及在三个发行版容器里真实安装一遍。
   不上传 artifact、不写回分支、不提交 `dist/`。
 - **下载链接就是仓库里的那个文件：**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
@@ -60,7 +60,8 @@ bash TMUX.sh --preset recommended --yes
 `TMUX.sh` 交互式安装并配置 tmux：安装方式（apt / 源码编译 / 跳过）、前缀键、
 8 个常用插件（TPM、sensible、yank、cpu、battery、Catppuccin、vim-tmux-navigator、
 tmuxifier）、5 项基础配置（鼠标、Vi 复制模式、索引从 1 开始、直觉化分割键、
-`prefix+r` 重载），以及完整卸载。选「推荐配置」一个回车即展开为 20 个步骤。
+`prefix+r` 重载）、Nerd Font（自动下载安装 —— 没有它状态栏图标就是一排方框），
+以及完整卸载。选「推荐配置」一个回车即展开为 21 个步骤。
 
 ## 架构
 
@@ -153,12 +154,12 @@ prepare  →  install  →  configure  →  final
 | 参数 | 说明 |
 | --- | --- |
 | `--preset <名字>` | 套用预设 |
-| `--set k=v` | 设置单个答案；出现得越晚优先级越高，可覆盖 `--preset`。未声明的 key 直接报错 |
+| `--set k=v` | 设置单个答案；出现得越晚优先级越高，可覆盖 `--preset`。未声明的 key、或选项题给了未声明的值，都直接报错 |
 | `--answers <文件>` | 从文件读答案（支持 `#` 注释与空行） |
 | `--save-answers <文件>` | 把最终答案写出来，用于复现与提 issue |
 | `--only <步骤id>` | 只执行指定步骤，可重复；保留原计划顺序 |
 | `--dry-run` | 只打印计划，不执行任何步骤 |
-| `--list` | 列出全部问题与步骤及其 `when` 条件 |
+| `--list` | 列出全部问题与步骤及其 `when` 条件，以及下载源的尝试顺序 |
 | `--lint` | 检查声明是否自洽（执行前也会自动跑一次） |
 | `--mirror <前缀>` | 追加一个 GitHub 镜像前缀 |
 | `-y, --yes` | 跳过确认页 |
@@ -186,7 +187,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-137 个 bats 测试分五层：
+172 个 bats 测试分六层：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |
@@ -195,14 +196,19 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 | `tests/conf.bats` | 生成的 `~/.tmux.conf` 内容与幂等性 | 临时 HOME |
 | `tests/cli.bats` | 参数解析、退出码、`curl \| bash`、lint 反例 | 无 |
 | `tests/ask.bats` | 交互导航，按键经 `DOT_INPUT_FD` 注入 | 无 |
+| `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断 | 无 |
 
 只有 `conf.bats` 碰文件系统，且全在 `$BATS_TEST_TMPDIR` 里。
 交互测试不需要 pty —— 按键从一个普通 fd 喂进去：
 
 ```bash
-exec 7< <(printf '\033[B\r')      # 下移一次 + 回车
+exec 7< <(printf '\033[B\n')      # 下移一次 + 回车
 DOT_INPUT_FD=7 bash TMUX.sh --save-answers out.txt
 ```
+
+这里的回车是 `\n` 而不是 `\r`：真终端会替我们把 CR 转成 LF（`ICRNL`），
+普通 fd 不会。`read_key` 现在也认 `\r`，两种都能跑 ——
+但测试统一用 `\n`，因为那才是终端实际送进来的字节。
 
 ## 文件结构
 
@@ -219,7 +225,7 @@ TMUX.sh          # 全部实现，按 §1..§11 分节
 ├─ §9  steps     # 每个步骤一个 step_* 函数
 ├─ §10 lint      # 声明自检
 └─ §11 cli       # 参数解析与 main
-tests/*.bats     # 五层测试
+tests/*.bats     # 六层测试
 run-tests.sh     # 本地 / Docker 测试入口
 ```
 
@@ -246,5 +252,13 @@ run-tests.sh     # 本地 / Docker 测试入口
   `grep dot_sudo TMUX.sh` 能看全部用法。
 - 覆盖 `~/.tmux.conf` 之前会备份为 `~/.tmux.conf.bak.<时间戳>`。
 - `--mirror` / `DOT_GITHUB_MIRRORS` 引入的镜像是**第三方信任根**，
-  脚本不做校验和或签名验证。默认直连 GitHub，镜像严格需要显式开启。
+  脚本不做校验和或签名验证。默认直连 GitHub，镜像严格需要显式开启；
+  `--list` 会按尝试顺序把下载源打出来。
+- 联网只发生在三个 GitHub 项目上：`tmux/tmux`（源码编译）、
+  `tmux-plugins/tpm`（插件）、`ryanoasis/nerd-fonts`（字体）。
+- 唯一的大流量步骤是字体：nerd-fonts 按字体族发包，zip 上百 MB 没得挑。
+  但只解出等宽的常规四款（约 20 MB，而非整包 233 MB），装过之后再跑就直接跳过，
+  而且它在 `final` 阶段 —— GitHub 限速不会让刚生成好的 tmux 配置作废。
+  不想装就 `--set tmux.font=skip`。
+- `Ctrl-C` 是真的停：恢复光标并以 130 退出，不会接着跑下一个步骤。
 - `--dry-run` 保证零副作用。不确定时先跑它。

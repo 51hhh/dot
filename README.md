@@ -46,7 +46,7 @@ Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file th
 
 - **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
 - **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 137 bats tests, and a real install inside three
+  `--lint`, shellcheck, shfmt, 172 bats tests, and a real install inside three
   distro containers. No artifact is uploaded, no branch is written to, no
   `dist/` is committed.
 - **The download URL is just the file in the repo:**
@@ -65,8 +65,9 @@ is missing here, it is one that was taken out.
 `TMUX.sh` installs and configures tmux: install method (apt / build from source /
 skip), prefix key, 8 common plugins (TPM, sensible, yank, cpu, battery, Catppuccin,
 vim-tmux-navigator, tmuxifier), 5 base options (mouse, Vi copy mode, 1-based
-indexing, intuitive splits, `prefix+r` reload), and a full uninstall. Picking
-**recommended** expands to a 20-step plan in one keystroke.
+indexing, intuitive splits, `prefix+r` reload), a Nerd Font (downloaded and
+installed for you — without one the status bar icons are just boxes), and a full
+uninstall. Picking **recommended** expands to a 21-step plan in one keystroke.
 
 ## Architecture
 
@@ -164,12 +165,12 @@ applied automatically (`clear_preset_keys`) — otherwise backing out of
 | Flag | Effect |
 | --- | --- |
 | `--preset <name>` | Apply a preset |
-| `--set k=v` | Set one answer; later occurrences win, so it overrides `--preset`. Unknown keys are a hard error |
+| `--set k=v` | Set one answer; later occurrences win, so it overrides `--preset`. An unknown key — or an unknown value for a choice question — is a hard error |
 | `--answers <file>` | Read answers from a file (`#` comments and blank lines allowed) |
 | `--save-answers <file>` | Write the final answers out, for reproduction and bug reports |
 | `--only <step-id>` | Run only these steps, repeatable; plan order preserved |
 | `--dry-run` | Print the plan, execute nothing |
-| `--list` | List every question and step with its `when` conditions |
+| `--list` | List every question and step with its `when` conditions, and the download sources in the order they will be tried |
 | `--lint` | Check the declarations (also runs automatically before any execution) |
 | `--mirror <prefix>` | Add a GitHub mirror prefix |
 | `-y, --yes` | Skip the confirmation screen |
@@ -197,7 +198,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 137 bats tests in five layers:
+images. 172 bats tests in six layers:
 
 | File | Covers | Needs |
 | --- | --- | --- |
@@ -206,14 +207,19 @@ images. 137 bats tests in five layers:
 | `tests/conf.bats` | the generated `~/.tmux.conf`, and idempotence | a temp HOME |
 | `tests/cli.bats` | flag parsing, exit codes, `curl \| bash`, lint negatives | nothing |
 | `tests/ask.bats` | interactive navigation, keystrokes injected via `DOT_INPUT_FD` | nothing |
+| `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic | nothing |
 
 Only `conf.bats` touches the filesystem, entirely inside `$BATS_TEST_TMPDIR`.
 Interactive tests need no pty — keystrokes are fed through a plain fd:
 
 ```bash
-exec 7< <(printf '\033[B\r')      # down once, then Enter
+exec 7< <(printf '\033[B\n')      # down once, then Enter
 DOT_INPUT_FD=7 bash TMUX.sh --save-answers out.txt
 ```
+
+Enter is `\n` here, not `\r`: a real terminal translates CR to LF for us
+(`ICRNL`), a plain fd does not. `read_key` normalises `\r` anyway, so both work —
+but the tests use `\n` because that is what a terminal actually delivers.
 
 ## Layout
 
@@ -230,7 +236,7 @@ TMUX.sh          # the whole implementation, sectioned §1..§11
 ├─ §9  steps     # one step_* function per step
 ├─ §10 lint      # declaration self-check
 └─ §11 cli       # argument parsing and main
-tests/*.bats     # the five layers
+tests/*.bats     # the six layers
 run-tests.sh     # local / Docker test entry point
 ```
 
@@ -263,5 +269,15 @@ copy of the patterns in `plan.bats`.
   overwritten.
 - Mirrors added via `--mirror` / `DOT_GITHUB_MIRRORS` are a **third-party trust
   root**; the script does no checksum or signature verification. GitHub is
-  contacted directly by default and mirrors are strictly opt-in.
+  contacted directly by default and mirrors are strictly opt-in. `--list` prints
+  the sources in the order they will be tried.
+- Network fetches are limited to three GitHub projects: `tmux/tmux` (source
+  builds), `tmux-plugins/tpm` (plugins), `ryanoasis/nerd-fonts` (the font).
+- The font step is the only heavy download: nerd-fonts ships one asset per family,
+  so the zip is >100 MB no matter what. Only the monospaced regular/bold/italic
+  faces are extracted (~20 MB on disk instead of 233 MB), it re-runs as a no-op
+  once the family is installed, and it runs in `final` — a rate-limited GitHub
+  cannot invalidate the tmux config you just got. `--set tmux.font=skip` opts out.
+- `Ctrl-C` aborts for real. It restores the cursor and exits 130 rather than
+  falling through to the next step.
 - `--dry-run` is guaranteed side-effect free. When unsure, run that first.

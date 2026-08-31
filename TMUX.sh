@@ -100,6 +100,10 @@ read_key() {
   local key="" seq=""
   has_input || return 1
   IFS= read -rsn1 -u "$TTY_FD" key || return 1
+  # 终端会把回车转成换行（ICRNL），read 于是把它当行分隔符、返回空串——
+  # 这是 '' 分支代表 Enter 的原因。但从普通 fd 喂进来的输入没有这层转换，
+  # 回车会以 \r 原样抵达，不归一化就表现为「按了回车什么都没发生」。
+  [[ "$key" == $'\r' ]] && key=""
   # 解析 ESC 序列（方向键等）
   if [[ "$key" == $'\e' ]]; then
     while :; do
@@ -115,7 +119,7 @@ read_line() {
   local line=""
   has_input || return 1
   IFS= read -r -u "$TTY_FD" line || return 1
-  printf '%s' "$line"
+  printf '%s' "${line%$'\r'}" # 同上：CRLF 输入不该把 \r 带进答案
 }
 
 is_back_key() {
@@ -280,10 +284,12 @@ step_fn() { printf 'step_%s' "${1//[.-]/_}"; }
 ans() { printf '%s' "${ANS[$1]:-}"; }
 has_word() { [[ " $1 " == *" $2 "* ]]; }
 
+# 把 <id> 的选项读进调用者的数组。
+# 用 read -r -a "$2" 而不是 local -n：nameref 是 bash 4.3 才有的语法，
+# 而 §1 的版本闸门是 4.2（declare -g）。read 的目标数组名本来就可以是变量，
+# 靠动态作用域写回调用者的 local 数组，效果一样，少一条版本要求。
 opts_of() {
-  local id="$1"
-  local -n _out="$2"
-  IFS="$US" read -r -a _out <<<"${Q["$id.opts"]}"
+  IFS="$US" read -r -a "$2" <<<"${Q["$1.opts"]}"
 }
 
 # apply_preset <名字> [noclobber]
@@ -674,8 +680,33 @@ github_prefixes() {
   done
 }
 
+# 同一个源上先 curl 再 wget。写成 if/elif（谁装了用谁）是不够的：
+# curl 装着却用不了是常见情形（缺 CA 证书、代理只对 wget 生效），
+# 那时候一个装好的 wget 就在旁边，没有理由不试。
+fetch_url() {
+  local target="$1" out="$2" progress=()
+  # 进度条只在 stderr 是终端时开。否则 `curl … | tee log`、CI 日志里
+  # 会塞进一整屏用回车拼出来的乱码 —— 字体包有 100 MB 以上，这段特别长。
+  if command -v curl >/dev/null 2>&1; then
+    [[ -t 2 ]] || progress=(-s)
+    curl -fSL "${progress[@]}" --connect-timeout 10 --retry 2 -o "$out" "$target" \
+      && return 0
+  fi
+  progress=()
+  if command -v wget >/dev/null 2>&1; then
+    [[ -t 2 ]] && progress=(--show-progress)
+    wget -q "${progress[@]}" --tries=2 --timeout=20 -O "$out" "$target" && return 0
+  fi
+  return 1
+}
+
 download_with_fallback() {
   local url="$1" out="$2" prefix target
+  # 工具缺失和下载失败是两种病，别让前者伪装成「所有源都失败」
+  if ! command -v curl >/dev/null 2>&1 && ! command -v wget >/dev/null 2>&1; then
+    log_error "既没有 curl 也没有 wget，无法下载：$url"
+    return 1
+  fi
   while read -r prefix; do
     target="${prefix}${url}"
     if [[ -n "$prefix" ]]; then
@@ -683,14 +714,7 @@ download_with_fallback() {
     else
       log_info "下载：$target"
     fi
-    if command -v curl >/dev/null 2>&1; then
-      curl -fSL --connect-timeout 10 --retry 2 -o "$out" "$target" && return 0
-    elif command -v wget >/dev/null 2>&1; then
-      wget -q --tries=2 --timeout=20 -O "$out" "$target" && return 0
-    else
-      log_error "既没有 curl 也没有 wget，无法下载。"
-      return 1
-    fi
+    fetch_url "$target" "$out" && return 0
     rm -f "$out"
     log_warn "下载失败，尝试下一个源..."
   done < <(github_prefixes)
@@ -701,6 +725,12 @@ download_with_fallback() {
 
 git_clone_with_fallback() {
   local repo="$1" dest="$2" prefix
+  # 没装 git 时逐个镜像失败一遍、最后报「所有源均克隆失败」是误导性诊断
+  if ! command -v git >/dev/null 2>&1; then
+    log_error "需要 git 才能克隆 $repo，但当前 PATH 中没有 git。"
+    log_error "请先安装 git（如 sudo apt-get install -y git）后重试。"
+    return 1
+  fi
   while read -r prefix; do
     [[ -n "$prefix" ]] && log_warn "使用镜像克隆（第三方信任根）：${prefix}${repo}"
     if git clone --depth 1 "${prefix}${repo}" "$dest" 2>/dev/null; then
@@ -729,6 +759,7 @@ ask one tmux.profile "配置方式" \
 preset recommended --when tmux.profile=recommended \
   tmux.install=apt \
   tmux.prefix=C-Space \
+  tmux.font=jetbrains \
   tmux.plugins="tpm sensible yank cpu battery catppuccin vim-navigator tmuxifier" \
   tmux.options="mouse vi index split reload"
 
@@ -764,6 +795,13 @@ ask many tmux.plugins "插件（需 TPM）" --when tmux.profile=custom \
   vim-navigator:"vim-tmux-navigator 窗格导航" \
   tmuxifier:"tmuxifier 会话布局管理"
 
+# 状态栏图标（尤其 Catppuccin）离了 Nerd Font 就是一排方框，
+# 所以字体不是「顺带提一句」的事，而是一道要么装、要么明确跳过的问题。
+ask one tmux.font "Nerd Font（状态栏图标需要）" --when tmux.profile=custom --default jetbrains \
+  jetbrains:"JetBrainsMono Nerd Font（推荐，自动下载安装，需下载上百 MB）" \
+  meslo:"MesloLGS Nerd Font（Powerlevel10k 同款）" \
+  skip:"不安装（已装好，或用不到图标）"
+
 ask many tmux.options "基础配置" --when tmux.profile=custom \
   mouse:"鼠标支持" \
   vi:"Vi 复制模式" \
@@ -798,6 +836,15 @@ step tmux.plugin.catppuccin configure --when tmux.profile!=uninstall --when tmux
 step tmux.plugin.vim_navigator configure --when tmux.profile!=uninstall --when tmux.plugins~vim-navigator --label "声明 vim-tmux-navigator"
 step tmux.plugin.tmuxifier configure --when tmux.profile!=uninstall --when tmux.plugins~tmuxifier --label "声明 tmuxifier"
 step tmux.status.catppuccin configure --when tmux.profile!=uninstall --when tmux.plugins~catppuccin --label "配置 Catppuccin 状态栏"
+
+# 字体放 final 而不是 install：它不写 tmux.conf，而且要下载几十 MB。
+# install 阶段失败会中止后续，让一次 GitHub 限速把整套配置作废；
+# final 阶段失败只告警继续 —— 配置照样生效，用户回头自己装字体就行。
+# 两个 --when 都需要：单写 !=skip 的话，key 未设置时 != 成立（见 §5），
+# 没答过这题的流程也会去下字体。
+step tmux.font final --when tmux.profile!=uninstall \
+  --when tmux.font --when tmux.font!=skip \
+  --label "下载安装 Nerd Font"
 
 step tmux.tpm.finalize final --when tmux.profile!=uninstall --when tmux.plugins~tpm --label "TPM 初始化并预装插件"
 step tmux.cleanup final --when tmux.profile!=uninstall --label "清理旧 tmux socket"
@@ -1079,6 +1126,108 @@ EOF
   log_ok "已配置 Catppuccin 状态栏"
 }
 
+# 字体名 → 「发行包名|字体族名」。zip 名不带版本号，所以 releases/latest
+# 这里是安全的（和 CI 里必须钉死版本的 shfmt 相反：那边文件名带版本，
+# latest/download/ 会 404）。
+declare -gA NERD_FONTS=(
+  [jetbrains]="JetBrainsMono|JetBrainsMono Nerd Font"
+  [meslo]="Meslo|MesloLGS Nerd Font"
+)
+
+# 装字体要 unzip + fontconfig，而这两个在「跳过 tmux 安装」的流程里不会被装上，
+# 所以这里自己补一次，补不上就明确说清楚缺什么。
+_ensure_font_deps() {
+  local missing=()
+  command -v unzip >/dev/null 2>&1 || missing+=(unzip)
+  command -v fc-cache >/dev/null 2>&1 || missing+=(fontconfig)
+  ((${#missing[@]} == 0)) && return 0
+  if command -v apt-get >/dev/null 2>&1; then
+    log_info "安装字体依赖：${missing[*]}"
+    dot_sudo apt-get update -qq \
+      && dot_sudo apt-get install -y "${missing[@]}" \
+      && return 0
+  fi
+  # fontconfig 缺失只影响缓存刷新，unzip 缺失则完全没法装
+  if ! command -v unzip >/dev/null 2>&1; then
+    log_error "安装字体需要 unzip，且自动安装失败；请手动安装 unzip 后重试。"
+    return 1
+  fi
+  log_warn "未找到 fc-cache（fontconfig），字体文件仍会安装，但可能要重启终端才生效。"
+  return 0
+}
+
+step_tmux_font() {
+  local choice spec pkg family dir zip
+  choice="$(ans tmux.font)"
+  spec="${NERD_FONTS[$choice]:-}"
+  if [[ -z "$spec" ]]; then
+    log_error "未知字体选项：$choice（可用：${!NERD_FONTS[*]}）"
+    return 1
+  fi
+  pkg="${spec%%|*}"
+  family="${spec#*|}"
+  dir="$HOME/.local/share/fonts/$pkg"
+
+  # 幂等：已经装过就别再下一遍上百 MB。
+  # 先把 fc-list 的输出接进变量再匹配，不写 fc-list | grep -q：
+  # grep -q 命中就退出，fc-list 吃到 SIGPIPE 死掉，§1 的 pipefail 于是
+  # 把整条管道判成 141 —— 「已经装好了」会被读成「还没装」，每次都重下一遍。
+  local installed=""
+  if command -v fc-list >/dev/null 2>&1; then
+    installed="$(fc-list 2>/dev/null || true)"
+  fi
+  if [[ -n "$installed" ]] && grep -qiF "$family" <<<"$installed"; then
+    log_ok "$family 已安装，跳过下载。"
+    return 0
+  fi
+
+  _ensure_font_deps || return 1
+
+  zip="$(mktemp -t nerd-font.XXXXXX)" || {
+    log_error "无法创建临时文件，字体安装中止。"
+    return 1
+  }
+  local url="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/$pkg.zip"
+  # nerd-fonts 只按字体族发包，下载量（100 MB 上下）没法挑，说清楚比让人干等好
+  log_info "正在下载 $pkg.zip（上百 MB，只解出终端要用的那几款）"
+  if ! download_with_fallback "$url" "$zip"; then
+    rm -f "$zip"
+    log_error "$family 下载失败。"
+    return 1
+  fi
+
+  # 整包解出来 200 MB 以上：每个字重都有 Mono / Propo / 变宽三套，再乘 NL 变体。
+  # 终端只用得上等宽（Mono）的常规四款，约 10 MB，其余纯属占地方还拖慢 fc-cache。
+  # 通配符故意不带族名前缀：Meslo 那边的文件名是 MesloLGS* 而不是 Meslo*。
+  local keep=(
+    '*NerdFontMono-Regular.ttf' '*NerdFontMono-Bold.ttf'
+    '*NerdFontMono-Italic.ttf' '*NerdFontMono-BoldItalic.ttf'
+    '*OFL*' '*LICENSE*'
+  )
+  mkdir -p "$dir"
+  unzip -oq "$zip" "${keep[@]}" -d "$dir" 2>/dev/null
+  # 故意不看 unzip 的退出码：只要有一个模式没匹配上它就退 1（warning），
+  # 而 keep 里的许可证名各家不一样，本来就允许落空。
+  # 真正该判断的是「到底有没有解出字体文件」—— 没有才说明上游改了命名，
+  # 那时退回整包解压：装大了总比装不上好。
+  if [[ -z "$(find "$dir" -name '*.ttf' -o -name '*.otf' | head -1)" ]]; then
+    log_warn "字体包里没有预期的 Mono 变体，改为整包解压（会占用较多空间）。"
+    if ! unzip -oq "$zip" -d "$dir"; then
+      rm -f "$zip"
+      log_error "$pkg.zip 解压失败（可能下载不完整）。"
+      return 1
+    fi
+  fi
+  rm -f "$zip"
+
+  if command -v fc-cache >/dev/null 2>&1; then
+    fc-cache -f "$dir" >/dev/null 2>&1 \
+      || log_warn "fc-cache 刷新失败；字体已在 $dir，重启终端后应可生效。"
+  fi
+  log_ok "$family 安装完成：$dir"
+  log_warn "还要手动把终端的字体设为「$family Mono」，图标才会显示出来。"
+}
+
 step_tmux_tpm_finalize() {
   # 必须是 tmux.conf 的最后一行
   conf_append <<'EOF'
@@ -1139,8 +1288,18 @@ step_tmux_cleanup() {
 }
 
 step_tmux_notes() {
-  local p
+  local p font_note choice spec
   p="$(tmux_prefix_value)"
+
+  # 字体这一步只能装文件，改终端配置得用户自己来，所以最后一定要再说一遍
+  choice="$(ans tmux.font)"
+  spec="${NERD_FONTS[$choice]:-}"
+  if [[ -n "$spec" ]]; then
+    font_note="已安装 ${spec#*|}，把终端字体设为「${spec#*|} Mono」"
+  else
+    font_note="未安装 Nerd Font；图标显示成方框时装一个再设为终端字体"
+  fi
+
   cat <<EOF
 
 $RULE
@@ -1157,8 +1316,8 @@ $RULE
       $p |    水平分割        $p -    垂直分割
       $p r    重载配置        $p I    重新安装插件
 
- 3) 若状态栏图标显示成方框，把终端字体改为 Nerd Font：
-      JetBrainsMono Nerd Font Mono
+ 3) 终端字体：
+      $font_note
 $RULE
 EOF
   log_ok "全部完成"
@@ -1237,6 +1396,46 @@ is_question() {
   return 1
 }
 
+# 选项 key 的集合，前后各留一个空格，便于 has_word
+option_keys() {
+  local id="$1" opts=() o keys=" "
+  opts_of "$id" opts
+  for o in ${opts[@]+"${opts[@]}"}; do keys="$keys${o%%:*} "; done
+  printf '%s' "$keys"
+}
+
+# 同一份清单，去掉给 has_word 用的首尾空格，用于报错信息
+option_keys_human() {
+  local keys
+  keys="$(option_keys "$1")"
+  keys="${keys# }"
+  printf '%s' "${keys% }"
+}
+
+# 值也必须是声明过的选项。key 拼错已经是硬报错，值拼错是同一类病：
+# `--set tmux.plugins="tpm yak"` 今天会安安静静地少装一个插件，
+# 而「少装了一个」是用户最不可能自己看出来的失败。
+# text / number 不校验 —— 它们本来就是自由输入。
+require_answer_value() {
+  local k="$1" v="$2" src="$3" kind keys words=() w
+  kind="${Q["$k.kind"]}"
+  [[ "$kind" == one || "$kind" == many ]] || return 0
+  keys="$(option_keys "$k")"
+  # 多选拆成词逐个查；单选整体就是一个词。空值对多选合法（等于什么都没选）
+  if [[ "$kind" == many ]]; then
+    read -r -a words <<<"$v"
+  else
+    words=("$v")
+  fi
+  for w in ${words[@]+"${words[@]}"}; do
+    has_word "$keys" "$w" && continue
+    log_error "$src：$k 不接受值「$w」"
+    log_error "可用值：$(option_keys_human "$k")"
+    return 1
+  done
+  return 0
+}
+
 run_lint() {
   local errors=0
   err() {
@@ -1299,7 +1498,15 @@ run_lint() {
   for name in "${!PRESETS[@]}"; do
     IFS="$US" read -r -a items <<<"${PRESETS[$name]}"
     for kv in "${items[@]}"; do
-      is_question "${kv%%=*}" || err "预设 $name 写入了未声明的 key：${kv%%=*}"
+      if ! is_question "${kv%%=*}"; then
+        err "预设 $name 写入了未声明的 key：${kv%%=*}"
+        continue
+      fi
+      # 值也要查：把 tmux.font=jetbrains 敲成 jetbrans，计划照样生成，
+      # 要等跑到那一步才炸。lint 是唯一能提前拦住它的地方。
+      # 这里直接计数而不套 err，是为了保留 require_answer_value 打出的可用值清单。
+      require_answer_value "${kv%%=*}" "${kv#*=}" "预设 $name" \
+        || errors=$((errors + 1))
     done
   done
 
@@ -1363,6 +1570,18 @@ list_declarations() {
       printf '    %-30s %b%s%b\n' "$id" "$DIM" "$(when_show "${S["$id.when"]}")" "$NC"
     done
   done
+
+  # 把下载源也列出来：镜像是第三方信任根，用户应该有一条命令能看清
+  # 「我这次会去谁那里取字节、按什么顺序」，而不是只能去读 §7 的代码。
+  printf '\n%b下载源%b（按尝试顺序）\n' "$BOLD" "$NC"
+  local p
+  while read -r p; do
+    if [[ -z "$p" ]]; then
+      printf '    %s\n' "直连 GitHub"
+    else
+      printf '    %s %b%s%b\n' "$p" "$DIM" "（镜像：第三方信任根）" "$NC"
+    fi
+  done < <(github_prefixes)
 }
 
 # 答案 key 必须是已声明的问题。
@@ -1394,6 +1613,7 @@ load_answers() {
     k="${line%%=*}"
     v="${line#*=}"
     require_question_key "$k" "$file 第 $((n + 1)) 行" || return 1
+    require_answer_value "$k" "$v" "$file 第 $((n + 1)) 行" || return 1
     ANS["$k"]="$v"
     n=$((n + 1))
   done <"$file"
@@ -1416,8 +1636,18 @@ save_answers() {
   log_ok "答案已保存到 $file"
 }
 
+# 需要参数值的选项少了值时，说人话，而不是抛出 set -u 的
+# 「$2: 未绑定的变量」加一串行号。传 $# 而不是 "${2-}"：
+# 后者会把「没给」和「给了空串」抹成同一件事。
+need_arg() {
+  (($2 >= 2)) || die "$1 需要一个参数值"
+}
+
 main() {
-  trap show_cursor EXIT INT TERM
+  trap show_cursor EXIT
+  # Ctrl-C 必须真的退出。只挂 show_cursor 的话 bash 会跑完 trap 接着往下走 ——
+  # 装到一半按 Ctrl-C 会继续装下一个步骤，而用户以为自己已经停下了。
+  trap 'show_cursor; printf "\n"; log_warn "已中断。"; exit 130' INT TERM
 
   local do_lint=0 do_list=0 dry_run=0 assume_yes=0 interactive=1
   local save_to="" only=()
@@ -1425,32 +1655,39 @@ main() {
   while (($#)); do
     case "$1" in
       --preset)
+        need_arg "$1" $#
         apply_preset "$2" || exit 1
         interactive=0
         shift 2
         ;;
       --set)
+        need_arg "$1" $#
         [[ "$2" == *=* ]] || die "--set 需要 key=值 形式，收到：$2"
         require_question_key "${2%%=*}" "--set" || exit 1
+        require_answer_value "${2%%=*}" "${2#*=}" "--set" || exit 1
         ANS["${2%%=*}"]="${2#*=}"
         interactive=0
         shift 2
         ;;
       --answers)
+        need_arg "$1" $#
         load_answers "$2" || exit 1
         interactive=0
         shift 2
         ;;
       --save-answers)
+        need_arg "$1" $#
         save_to="$2"
         shift 2
         ;;
       --only)
+        need_arg "$1" $#
         only+=("$2")
         interactive=0
         shift 2
         ;;
       --mirror)
+        need_arg "$1" $#
         DOT_GITHUB_MIRRORS="${DOT_GITHUB_MIRRORS} $2"
         shift 2
         ;;

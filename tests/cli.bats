@@ -78,7 +78,7 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
 }
 
 @test "--dry-run 不执行任何步骤（不产生 ~/.tmux.conf）" {
-  HOME="$BATS_TEST_TMPDIR/h" run env HOME="$BATS_TEST_TMPDIR/h" \
+  run env HOME="$BATS_TEST_TMPDIR/h" \
     bash "$BATS_TEST_DIRNAME/../TMUX.sh" --preset recommended --dry-run
   [ "$status" -eq 0 ]
   [ ! -e "$BATS_TEST_TMPDIR/h/.tmux.conf" ]
@@ -111,7 +111,7 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [ -s "$f" ]
   run SH --answers "$f" --dry-run
   [ "$status" -eq 0 ]
-  [ "$(grep -c '·' <<< "$output")" -eq 20 ]
+  [ "$(grep -c '·' <<< "$output")" -eq 21 ]
 }
 
 @test "答案文件格式错误时报错退出" {
@@ -147,6 +147,71 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [ "$status" -eq 0 ]
   [[ "$output" == *tmux.plugin.tpm* ]]
   [[ "$output" == *tmux.plugin.yank* ]]
+}
+
+# ── 答案值拼错也必须报错 ────────────────────────────────────────
+#
+# key 拼错和值拼错是同一类病：计划安安静静地少做一件事。
+# `--set tmux.plugins="tpm yak"` 曾经只是少装一个 yank，没有任何提示。
+
+@test "--set 用了未声明的选项值时报错退出" {
+  run SH --set tmux.font=comicsans --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"不接受值"* ]]
+  [[ "$output" == *comicsans* ]]
+  # 报错里要给出可用值，否则用户只能去读源码
+  [[ "$output" == *jetbrains* ]]
+}
+
+@test "多选里有一个词拼错就报错，不是静默少装一个" {
+  run SH --set tmux.plugins="tpm yak" --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"不接受值"* ]]
+  [[ "$output" == *yak* ]]
+}
+
+@test "多选空值合法（等于什么都没选）" {
+  run SH --set tmux.profile=custom --set tmux.plugins= --dry-run
+  [ "$status" -eq 0 ]
+}
+
+@test "自由文本题不做值校验" {
+  run SH --set tmux.profile=custom --set tmux.install=source \
+    --set tmux.source_version=9.9zz --dry-run
+  [ "$status" -eq 0 ]
+}
+
+@test "答案文件里的值拼错也报错退出" {
+  local f="$BATS_TEST_TMPDIR/badval.txt"
+  printf 'tmux.profile=custom\ntmux.install=api\n' > "$f"
+  run SH --answers "$f" --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"不接受值"* ]]
+}
+
+# ── 缺少参数值时说人话 ──────────────────────────────────────────
+
+@test "选项缺少参数值时给出可读报错，而不是 set -u 的未绑定变量" {
+  local f
+  for f in --preset --set --answers --save-answers --only --mirror; do
+    run SH "$f"
+    [ "$status" -eq 1 ] || { echo "$f 应该退出码 1"; return 1; }
+    [[ "$output" == *"需要一个参数值"* ]] || { echo "$f 报错不可读：$output"; return 1; }
+    [[ "$output" != *"未绑定的变量"* ]] || { echo "$f 泄漏了 set -u 报错"; return 1; }
+    [[ "$output" != *"unbound variable"* ]] || { echo "$f 泄漏了 set -u 报错"; return 1; }
+  done
+}
+
+# ── 空计划 ──────────────────────────────────────────────────────
+
+@test "计划为空时明确说明，而不是假装装完了" {
+  # --only 指定的步骤存在，但它的 when 不成立 → 过滤后计划为空
+  run env HOME="$BATS_TEST_TMPDIR/h" \
+    bash "$BATS_TEST_DIRNAME/../TMUX.sh" \
+    --set tmux.profile=uninstall --only tmux.header
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"没有需要执行的步骤"* ]]
+  [ ! -e "$BATS_TEST_TMPDIR/h/.tmux.conf" ]
 }
 
 # ── 非终端输出不带颜色 ───────────────────────────────────────────
@@ -218,6 +283,8 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
 @test "DOT_INPUT_FD 非数字时报错" {
   DOT_INPUT_FD=abc run SH --lint
   [ "$status" -eq 1 ]
+  # 也断言原因：只看退出码的话，任何一种崩溃都能让这个测试「通过」
+  [[ "$output" == *"DOT_INPUT_FD"* ]]
 }
 
 # ── 语义提醒 ─────────────────────────────────────────────────────
@@ -281,6 +348,14 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   run broken 's|^  tmux.install=apt|  tmux.instal=apt|'
   [ "$status" -eq 1 ]
   [[ "$output" == *"未声明的 key：tmux.instal"* ]]
+}
+
+@test "lint 抓到预设写入非法的选项值" {
+  # 值拼错和 key 拼错一样致命，而且只有 lint 能在执行前拦住它
+  run broken 's|  tmux.font=jetbrains|  tmux.font=jetbrans|'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"不接受值"* ]]
+  [[ "$output" == *jetbrans* ]]
 }
 
 @test "执行前会自动跑一次 lint，声明坏了不会开始安装" {

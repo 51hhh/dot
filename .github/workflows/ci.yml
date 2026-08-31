@@ -52,8 +52,10 @@ jobs:
 
       - uses: actions/checkout@v4
 
+      # 字体在这里跳过：三个容器各拉一遍几十 MB 的 zip，既慢又把 CI 的
+      # 绿灯绑到 nerd-fonts 的发布页和限速上。字体单独在下面一个容器里测。
       - name: 非交互安装推荐配置
-        run: bash TMUX.sh --preset recommended --yes
+        run: bash TMUX.sh --preset recommended --set tmux.font=skip --yes
 
       - name: 校验产物
         run: |
@@ -61,3 +63,20 @@ jobs:
           grep -q '由 TMUX.sh 生成' "$HOME/.tmux.conf"
           grep -q "@plugin 'tmux-plugins/tpm'" "$HOME/.tmux.conf"
           tmux -V
+
+      # 字体是唯一会往 ~/.local/share/fonts 写东西的步骤，只有真跑一次
+      # 才能发现「zip 换了目录结构」这类问题。一个容器足够。
+      - name: 安装并校验 Nerd Font（只在一个镜像上跑）
+        if: matrix.image == 'ubuntu:24.04'
+        run: |
+          bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
+            --only tmux.font --yes
+          ls "$HOME/.local/share/fonts/JetBrainsMono"/*.ttf >/dev/null
+          fc-list | grep -qi 'JetBrainsMono Nerd Font'
+          # 只该解出等宽的常规四款（NL 变体同名，所以放宽到 8）。
+          # 整包是 96 个 ttf / 233 MB，这条断言就是防止筛选被写坏后悄悄退回整包。
+          n=$(find "$HOME/.local/share/fonts/JetBrainsMono" -name '*.ttf' | wc -l)
+          test "$n" -le 8 || { echo "解出了 $n 个字体文件，筛选失效"; exit 1; }
+          # 幂等：第二次应当直接跳过，而不是再下一遍
+          bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
+            --only tmux.font --yes 2>&1 | grep -q '已安装'

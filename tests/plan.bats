@@ -54,10 +54,10 @@ plan_of() {
 
 # ── 预设 ─────────────────────────────────────────────────────────
 
-@test "recommended 预设展开为 20 个步骤" {
+@test "recommended 预设展开为 21 个步骤" {
   ANS[tmux.profile]=recommended
   resolve_presets; build_plan
-  [ "${#PLAN[@]}" -eq 20 ]
+  [ "${#PLAN[@]}" -eq 21 ]
 }
 
 @test "recommended 覆盖全部 8 个插件" {
@@ -157,6 +157,38 @@ plan_of() {
   [[ "$got" == *tmux.plugin.catppuccin*tmux.status.catppuccin* ]]
 }
 
+# ── 字体 ─────────────────────────────────────────────────────────
+
+@test "recommended 会装 Nerd Font" {
+  ANS[tmux.profile]=recommended
+  [[ "$(plan_of)" == *tmux.font* ]]
+}
+
+@test "font=skip 不产生字体步骤" {
+  ANS[tmux.profile]=custom
+  ANS[tmux.font]=skip
+  [[ "$(plan_of)" != *tmux.font* ]]
+}
+
+@test "没答过字体这题时不会去下字体" {
+  # tmux.font!=skip 在 key 未设置时是成立的（见 §5 的 != 语义），
+  # 所以步骤必须同时要求 tmux.font 非空，否则谁都会被下一遍字体。
+  ANS[tmux.profile]=custom
+  [[ "$(plan_of)" != *tmux.font* ]]
+}
+
+@test "uninstall 不会去装字体" {
+  ANS[tmux.profile]=uninstall
+  ANS[tmux.font]=jetbrains
+  resolve_presets; build_plan
+  [ "${PLAN[*]}" = "tmux.uninstall" ]
+}
+
+@test "字体步骤在 final 阶段，失败不该中止配置" {
+  [ "${S[tmux.font.phase]}" = final ]
+  ! has_word "$CRITICAL_PHASES" final
+}
+
 @test "install=skip 不产生任何安装步骤" {
   ANS[tmux.profile]=custom
   ANS[tmux.install]=skip
@@ -185,10 +217,10 @@ plan_of() {
   [ "${lines[0]}" = "tmux.profile" ]
 }
 
-@test "custom 问 5 个问题（不含条件子问题）" {
+@test "custom 问 6 个问题（不含条件子问题）" {
   ANS[tmux.profile]=custom
   run visible_questions
-  [ "${#lines[@]}" -eq 5 ]
+  [ "${#lines[@]}" -eq 6 ]
 }
 
 @test "source_version 只在选了源码编译时出现" {
