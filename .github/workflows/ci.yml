@@ -13,15 +13,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # shfmt 版本必须钉死：用 releases/latest/download/ 需要文件名里带上
+      # 最新的版本号，写死某个版本号就会在下一次发布时 404（curl exit 22）。
+      # 钉死同时也避免新版格式规则一改就把 CI 弄红。
       - name: 安装 shellcheck / shfmt / bats
+        env:
+          SHFMT_VERSION: v3.14.0
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
           curl -fsSL -o /tmp/shfmt \
-            https://github.com/mvdan/sh/releases/latest/download/shfmt_v3.8.0_linux_amd64
+            "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
           chmod +x /tmp/shfmt && sudo mv /tmp/shfmt /usr/local/bin/shfmt
           git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
           sudo /tmp/bats/install.sh /usr/local
+          # 装没装上，现在就说清楚，而不是等 run-tests.sh 静默回落到 docker
+          shellcheck --version | head -2
+          shfmt --version
+          bats --version
 
       - run: ./run-tests.sh
 
