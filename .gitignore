@@ -1,38 +1,24 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-
-# Test coverage
-coverage/
-tests/integration/tmp/
-
-# Logs
+# 测试产物
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
+tests/tmp/
 
-# OS files
+# 生成的配置备份（本地误跑时产生）
+.tmux.conf.bak.*
+
+# OS
 .DS_Store
 Thumbs.db
 
-# IDE / Editor
+# 编辑器
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# Development tools
-.tmp-inspect/
+# Agent / 工具目录
 .worktrees/
 .agents/
 .codex/
 .trellis/
 .claude/
-
-# Project specific
-Tmux.sh
-docs/superpowers/
