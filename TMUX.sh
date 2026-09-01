@@ -1436,7 +1436,10 @@ step_tmux_font() {
   # 而 keep 里的许可证名各家不一样，本来就允许落空。
   # 真正该判断的是「到底有没有解出字体文件」—— 没有才说明上游改了命名，
   # 那时退回整包解压：装大了总比装不上好。
-  if [[ -z "$(find "$dir" -name '*.ttf' -o -name '*.otf' | head -1)" ]]; then
+  # -print -quit 而不是 `| head -1`：后者在 pipefail 下让 find 吃 SIGPIPE、
+  # 管道退 141。这里只取 stdout 所以还不至于出错，但同一个写法在别处已经
+  # 咬过一次，索性统一成不带管道的那种。
+  if [[ -z "$(find "$dir" \( -name '*.ttf' -o -name '*.otf' \) -print -quit)" ]]; then
     log_warn "字体包里没有预期的 Mono 变体，改为整包解压（会占用较多空间）。"
     if ! unzip -oq "$zip" -d "$dir"; then
       rm -f "$zip"

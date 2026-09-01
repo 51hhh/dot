@@ -46,7 +46,7 @@ Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file th
 
 - **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
 - **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 211 bats tests, and a real install inside four
+  `--lint`, shellcheck, shfmt, 212 bats tests, and a real install inside four
   distro containers (Ubuntu 22.04/24.04, Debian 12, Fedora 44). No artifact is
   uploaded, no branch is written to, no `dist/` is committed.
 - **The download URL is just the file in the repo:**
@@ -199,7 +199,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 211 bats tests in six layers:
+images. 212 bats tests in six layers:
 
 | File | Covers | Needs |
 | --- | --- | --- |

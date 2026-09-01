@@ -33,7 +33,7 @@ jobs:
             https://github.com/bats-core/bats-core.git /tmp/bats
           sudo /tmp/bats/install.sh /usr/local
           # 装没装上，现在就说清楚，而不是等 run-tests.sh 静默回落到 docker
-          shellcheck --version | head -2
+          shellcheck --version
           shfmt --version
           bats --version
 
@@ -116,6 +116,18 @@ jobs:
           # 无连字的 NL 副本要被排除：它只是又两个几乎同名的族，把选择框搞乱
           nl=$(find "$dir" -name '*NL*' | wc -l)
           test "$nl" -eq 0 || { echo "NL 变体没被排除（$nl 个）"; exit 1; }
-          # 幂等：第二次应当直接跳过，而不是再下一遍
-          bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
-            --only tmux.font --yes 2>&1 | grep -q '已安装'
+          # 幂等：第二次应当直接跳过，而不是再下一遍。
+          #
+          # 先把输出收进变量，再用 here-string 匹配 —— 不写成
+          # `bash TMUX.sh ... | grep -q`：grep -q 命中就立刻退出，脚本还在写
+          # stdout，于是吃到 SIGPIPE 退 141；shell: bash 带 -o pipefail，
+          # 整步就红在一个「其实是通过了」的断言上。脚本里避开的就是这一类。
+          out=$(bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
+            --only tmux.font --yes 2>&1)
+          grep -q '跳过下载' <<< "$out" || {
+            echo "第二次运行没有跳过下载："; printf '%s\n' "$out"; exit 1
+          }
+          # 反向断言：命中「跳过」的同时绝不该再出现下载动作
+          ! grep -q '正在下载' <<< "$out" || {
+            echo "已装好却又下载了一遍："; printf '%s\n' "$out"; exit 1
+          }

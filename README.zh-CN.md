@@ -45,7 +45,7 @@ bash TMUX.sh --preset recommended --yes
 
 - **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
 - **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、211 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
+  shfmt、212 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
   Fedora 44）里真实安装一遍。不上传 artifact、不写回分支、不提交 `dist/`。
 - **下载链接就是仓库里的那个文件：**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
@@ -188,7 +188,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-211 个 bats 测试分六层：
+212 个 bats 测试分六层：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |

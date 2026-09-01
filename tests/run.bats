@@ -193,12 +193,17 @@ run_fake_plan() {
   DOWNLOADED=0
   fc-list() { printf 'JetBrainsMono Nerd Font\nJetBrainsMono Nerd Font Mono\n'; }
   download_with_fallback() { DOWNLOADED=1; }
+  local out="$BATS_TEST_TMPDIR/font-out"
   local st=0
-  step_tmux_font >/dev/null 2>&1 || st=$?
+  step_tmux_font > "$out" 2>&1 || st=$?
   [ "$st" -eq 0 ]
   # 这条断言防的是具体那个 bug：fc-list | grep -q 在 pipefail 下退 141，
   # 「已装好」被读成「没装」，于是每次都重下一遍。
   [ "$DOWNLOADED" -eq 0 ]
+  # 「跳过下载」这几个字是 CI 幂等断言 grep 的字符串。改文案就得同时改
+  # ci.yml，否则那条断言变成永远失败（或者更糟：永远通过）。
+  grep -q '跳过下载' "$out"
+  ! grep -q '正在下载' "$out"
 }
 
 @test "只装了 Mono 一族（旧版本留下的半装状态）时会补下载" {
