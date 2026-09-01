@@ -45,8 +45,8 @@ bash TMUX.sh --preset recommended --yes
 
 - **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
 - **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、179 个 bats 测试，以及在三个发行版容器里真实安装一遍。
-  不上传 artifact、不写回分支、不提交 `dist/`。
+  shfmt、197 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
+  Fedora 40）里真实安装一遍。不上传 artifact、不写回分支、不提交 `dist/`。
 - **下载链接就是仓库里的那个文件：**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
 
@@ -57,7 +57,8 @@ bash TMUX.sh --preset recommended --yes
 
 ## 它做什么
 
-`TMUX.sh` 交互式安装并配置 tmux：安装方式（apt / 源码编译 / 跳过）、前缀键、
+`TMUX.sh` 交互式安装并配置 tmux：安装方式（包管理器 —— apt / dnf / pacman /
+zypper 自动识别 —— 或源码编译，或跳过）、前缀键、
 8 个常用插件（TPM、sensible、yank、cpu、battery、Catppuccin、vim-tmux-navigator、
 tmuxifier）、5 项基础配置（鼠标、Vi 复制模式、索引从 1 开始、直觉化分割键、
 `prefix+r` 重载）、Nerd Font（自动下载安装 —— 没有它状态栏图标就是一排方框），
@@ -187,7 +188,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-179 个 bats 测试分六层：
+197 个 bats 测试分六层：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |
@@ -196,7 +197,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 | `tests/conf.bats` | 生成的 `~/.tmux.conf` 内容与幂等性 | 临时 HOME |
 | `tests/cli.bats` | 参数解析、退出码、`curl \| bash`、lint 反例 | 无 |
 | `tests/ask.bats` | 交互导航，按键经 `DOT_INPUT_FD` 注入 | 无 |
-| `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断 | 无 |
+| `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断与解压白名单、包管理器抽象、tmux 版本下限 | 无 |
 
 只有 `conf.bats` 碰文件系统，且全在 `$BATS_TEST_TMPDIR` 里。
 交互测试不需要 pty —— 按键从一个普通 fd 喂进去：

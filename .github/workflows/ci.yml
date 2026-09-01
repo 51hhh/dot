@@ -41,18 +41,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: [ubuntu:22.04, ubuntu:24.04, debian:12]
+        # fedora 在这里的作用是证明包管理器那层抽象是真的：
+        # 脚本以前硬写 apt-get，非 Debian 系跑到「安装 tmux」就失败，
+        # 而失败信息看起来像 tmux 装不上，不像「不认识 dnf」。
+        # pacman / zypper 分支没有容器覆盖，只有单元测试。
+        image: [ubuntu:22.04, ubuntu:24.04, debian:12, fedora:40]
     container:
       image: ${{ matrix.image }}
     steps:
       - name: 准备最小环境
+        shell: bash
         run: |
-          apt-get update -qq
-          apt-get install -y -qq bash ca-certificates git sudo
+          if command -v apt-get >/dev/null; then
+            apt-get update -qq
+            apt-get install -y -qq bash ca-certificates git sudo
+          else
+            # procps-ng：socket 清理那一步要用 pgrep
+            dnf install -y -q bash ca-certificates git sudo procps-ng findutils
+          fi
 
       - uses: actions/checkout@v4
 
-      # 字体在这里跳过：三个容器各拉一遍几十 MB 的 zip，既慢又把 CI 的
+      # 字体在这里跳过：每个容器各拉一遍上百 MB 的 zip，既慢又把 CI 的
       # 绿灯绑到 nerd-fonts 的发布页和限速上。字体单独在下面一个容器里测。
       - name: 非交互安装推荐配置
         run: bash TMUX.sh --preset recommended --set tmux.font=skip --yes
@@ -68,6 +78,10 @@ jobs:
       # 才能发现「zip 换了目录结构」这类问题。一个容器足够。
       - name: 安装并校验 Nerd Font（只在一个镜像上跑）
         if: matrix.image == 'ubuntu:24.04'
+        # 容器里 run: 默认落到 dash，这一步用了 here-string（<<<）—— 那是 bash
+        # 特性，dash 会报「redirection unexpected」退 2，而且是在断言之前就死掉，
+        # 看起来像字体装失败。其他步骤能过只是因为它们碰巧全是 POSIX 写法。
+        shell: bash
         run: |
           bash TMUX.sh --set tmux.profile=custom --set tmux.font=jetbrains \
             --only tmux.font --yes

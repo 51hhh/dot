@@ -838,7 +838,9 @@ ask many tmux.options "基础配置" --when tmux.profile=custom \
 step tmux.uninstall prepare --when tmux.profile=uninstall \
   --label "完全卸载 tmux 及配置"
 
-step tmux.apt install --when tmux.profile!=uninstall --when tmux.install=apt --label "通过 apt 安装 tmux"
+# 答案值仍叫 apt（答案文件是对外契约，改了旧文件就读不回来了），
+# 但实现认 apt-get / dnf / pacman / zypper，所以标签不写死 apt。
+step tmux.apt install --when tmux.profile!=uninstall --when tmux.install=apt --label "通过包管理器安装 tmux"
 step tmux.source install --when tmux.profile!=uninstall --when tmux.install=source --label "源码编译安装 tmux"
 
 step tmux.header configure --when tmux.profile!=uninstall --label "初始化 ~/.tmux.conf"
@@ -878,6 +880,85 @@ step tmux.notes final --when tmux.profile!=uninstall --label "显示后续提示
 
 TMUX_CONF="$HOME/.tmux.conf"
 
+# ── 包管理器 ─────────────────────────────────────────────────────
+#
+# 抽象只有「刷新索引」「装包」「编译依赖的包名」三条 —— 脚本对包管理器的
+# 全部需求就这些。硬写 apt-get 的话，Fedora / Arch 上跑到这一步直接失败，
+# 而失败点是「安装 tmux」，看起来像 tmux 装不上，而不是「不认识 dnf」。
+detect_pm() {
+  local pm
+  for pm in apt-get dnf pacman zypper; do
+    if command -v "$pm" >/dev/null 2>&1; then
+      printf '%s' "$pm"
+      return 0
+    fi
+  done
+  return 1
+}
+
+pm_refresh() {
+  case "$1" in
+    apt-get) dot_sudo apt-get update -qq ;;
+    pacman) dot_sudo pacman -Sy --noconfirm ;;
+    # dnf / zypper 装包时自己会按需刷元数据，多刷一遍只是白等
+    *) return 0 ;;
+  esac
+}
+
+pm_install() {
+  local pm="$1"
+  shift
+  case "$pm" in
+    apt-get) dot_sudo apt-get install -y "$@" ;;
+    dnf) dot_sudo dnf install -y "$@" ;;
+    # --needed：已装的包不重新下载，让这一步幂等
+    pacman) dot_sudo pacman -S --needed --noconfirm "$@" ;;
+    zypper) dot_sudo zypper install -y "$@" ;;
+    *) return 1 ;;
+  esac
+}
+
+# 运行时依赖（tmux git unzip … xclip wl-clipboard）四家包名恰好一致，
+# 只有编译依赖不一样，所以只有这一张表。
+pm_build_deps() {
+  case "$1" in
+    apt-get) printf '%s\n' git automake build-essential pkg-config libevent-dev libncurses-dev bison ;;
+    dnf) printf '%s\n' git automake gcc make pkgconf-pkg-config libevent-devel ncurses-devel bison ;;
+    pacman) printf '%s\n' git base-devel libevent ncurses bison pkgconf ;;
+    zypper) printf '%s\n' git automake gcc make pkg-config libevent-devel ncurses-devel bison ;;
+    *) return 1 ;;
+  esac
+}
+
+# 插件下限：catppuccin/tmux 用了 3.2 才有的 %{E:} 与 -F 语法。
+# 低于这个版本装完不报错，但状态栏是空的或一串没展开的字面量。
+TMUX_MIN_VERSION=3.2
+
+# a >= b。不写 `sort -V | head -1`：head 读够就退出，sort 吃 SIGPIPE，
+# 在 §1 的 pipefail 下整条管道判成 141 —— 和字体那个 bug 是同一种。
+version_ge() {
+  local sorted
+  sorted="$(printf '%s\n%s\n' "$1" "$2" | sort -V)"
+  [[ "${sorted%%$'\n'*}" == "$2" ]]
+}
+
+# tmux -V 是 "tmux 3.5a" 这种；去掉字母后缀才能交给 sort -V
+tmux_version() {
+  local v
+  v="$(tmux -V 2>/dev/null || true)"
+  v="${v#tmux }"
+  printf '%s' "${v//[^0-9.]/}"
+}
+
+warn_if_tmux_too_old() {
+  local v="$1"
+  [[ -n "$v" ]] || return 0
+  version_ge "$v" "$TMUX_MIN_VERSION" && return 0
+  log_warn "发行版给的是 tmux $v，低于插件要求的 $TMUX_MIN_VERSION。"
+  log_warn "状态栏（尤其 Catppuccin）会显示不全或空白。改用源码编译："
+  log_warn "  bash TMUX.sh --set tmux.profile=custom --set tmux.install=source"
+}
+
 # 写不进去必须是失败。重定向失败时 cat 根本不会执行、返回 1，
 # 但调用方原先紧接着就 log_ok —— 只读的 HOME 或写满的磁盘于是能跑出
 # 一屏「✓ 已配置」加退出码 0，而 ~/.tmux.conf 一个字节都没有。
@@ -916,31 +997,37 @@ tmux_prefix_value() {
 }
 
 step_tmux_apt() {
-  log_info "通过 apt 安装 tmux 与常用依赖..."
-  if ! command -v apt-get >/dev/null 2>&1; then
-    log_error "未找到 apt-get；请改选源码编译，或用本机包管理器手动安装 tmux。"
+  local pm
+  if ! pm="$(detect_pm)"; then
+    log_error "未识别的包管理器（认识 apt-get / dnf / pacman / zypper）。"
+    log_error "请手动安装：tmux git unzip wget curl fontconfig xclip 或 wl-clipboard。"
     return 1
   fi
-  if ! dot_sudo apt-get update -qq; then
-    log_error "apt-get update 失败；请检查网络、软件源或 sudo 权限。"
+  log_info "通过 $pm 安装 tmux 与常用依赖..."
+  if ! pm_refresh "$pm"; then
+    log_error "$pm 刷新软件源失败；请检查网络、软件源或 sudo 权限。"
     return 1
   fi
+  # xclip 与 wl-clipboard 都装：tmux-yank 按会话环境二选一，X11 与 Wayland
+  # 在同一台机器上都可能出现（GNOME 下 Xwayland 应用就是 X11 剪贴板）。
   local pkgs=(tmux git unzip wget curl fontconfig xclip wl-clipboard)
-  if ! dot_sudo apt-get install -y "${pkgs[@]}"; then
-    log_error "apt-get install 失败；tmux 未安装。"
+  if ! pm_install "$pm" "${pkgs[@]}"; then
+    log_error "$pm 安装失败；tmux 未安装。"
     return 1
   fi
-  dot_sudo apt-get install -y acpi \
+  # acpi 只有 tmux-battery 在台式机上用得到，缺了不该让整步失败
+  pm_install "$pm" acpi \
     || log_warn "可选包 acpi 安装失败，已跳过（电池插件可能缺少电量信息）。"
 
   hash -r
   local v
-  v="$(tmux -V 2>/dev/null || true)"
+  v="$(tmux_version)"
   if [[ -z "$v" ]]; then
     log_error "安装结束后仍无法执行 tmux -V。"
     return 1
   fi
   log_ok "tmux 安装完成（$v）"
+  warn_if_tmux_too_old "$v"
 }
 
 step_tmux_source() {
@@ -949,17 +1036,21 @@ step_tmux_source() {
   version="${version:-3.4}"
   log_info "源码编译安装 tmux $version..."
 
-  if ! command -v apt-get >/dev/null 2>&1; then
-    log_error "源码编译当前仅自动支持 apt 系统；请手动安装编译依赖后重试。"
+  local pm
+  if ! pm="$(detect_pm)"; then
+    log_error "未识别的包管理器；请手动安装编译依赖（libevent / ncurses 的 dev 包、"
+    log_error "编译器、make、bison、pkg-config）后重试。"
     return 1
   fi
-  dot_sudo apt-get update -qq || {
-    log_error "apt-get update 失败。"
+  pm_refresh "$pm" || {
+    log_error "$pm 刷新软件源失败。"
     return 1
   }
-  local deps=(git automake build-essential pkg-config libevent-dev
-    libncurses-dev bison wget curl ca-certificates)
-  if ! dot_sudo apt-get install -y "${deps[@]}"; then
+  local deps=()
+  mapfile -t deps < <(pm_build_deps "$pm")
+  # 这三个各家包名一致，不进 pm_build_deps 的表
+  deps+=(wget curl ca-certificates)
+  if ! pm_install "$pm" "${deps[@]}"; then
     log_error "安装编译依赖失败。"
     return 1
   fi
@@ -1183,6 +1274,26 @@ declare -gA NERD_FONTS=(
   [meslo]="Meslo|MesloLGS Nerd Font"
 )
 
+# 解压白名单。整包解出来 200 MB 以上：每个字重（Thin…ExtraBold 共 9 档）
+# 都有 Mono / Propo / 变宽三套，再乘无连字（NL）副本 —— 96 个 ttf。
+# 只留常规四个字重，且两个族名都要留：
+#   *NerdFontMono-*  →「X Nerd Font Mono」  终端真正该选的那个（spacing=100）
+#   *NerdFont-*      →「X Nerd Font」        所有文档和字体搜索框里用的名字
+# 只留 Mono 的话，用户在设置里搜「JetBrainsMono Nerd Font」什么都搜不到，
+# 会合理地以为字体没装上 —— 这是实际收到的反馈，不是假想。
+# 通配符故意不带族名前缀：Meslo 那边的文件名是 MesloLGS* 而不是 Meslo*。
+declare -ga FONT_KEEP=(
+  '*NerdFontMono-Regular.ttf' '*NerdFontMono-Bold.ttf'
+  '*NerdFontMono-Italic.ttf' '*NerdFontMono-BoldItalic.ttf'
+  '*NerdFont-Regular.ttf' '*NerdFont-Bold.ttf'
+  '*NerdFont-Italic.ttf' '*NerdFont-BoldItalic.ttf'
+  '*OFL*' '*LICENSE*'
+)
+
+# NL = no ligatures。它只是又两个几乎同名的族，在字体选择框里紧挨着正版，
+# 挑错了不会报错、只是连字没了 —— 与其解释，不如不装。
+declare -ga FONT_EXCLUDE=('*NL*')
+
 # 装字体要 unzip + fontconfig，而这两个在「跳过 tmux 安装」的流程里不会被装上，
 # 所以这里自己补一次，补不上就明确说清楚缺什么。
 _ensure_font_deps() {
@@ -1190,11 +1301,10 @@ _ensure_font_deps() {
   command -v unzip >/dev/null 2>&1 || missing+=(unzip)
   command -v fc-cache >/dev/null 2>&1 || missing+=(fontconfig)
   ((${#missing[@]} == 0)) && return 0
-  if command -v apt-get >/dev/null 2>&1; then
+  local pm
+  if pm="$(detect_pm)"; then
     log_info "安装字体依赖：${missing[*]}"
-    dot_sudo apt-get update -qq \
-      && dot_sudo apt-get install -y "${missing[@]}" \
-      && return 0
+    pm_refresh "$pm" && pm_install "$pm" "${missing[@]}" && return 0
   fi
   # fontconfig 缺失只影响缓存刷新，unzip 缺失则完全没法装
   if ! command -v unzip >/dev/null 2>&1; then
@@ -1245,23 +1355,8 @@ step_tmux_font() {
     return 1
   fi
 
-  # 整包解出来 200 MB 以上：每个字重都有 Mono / Propo / 变宽三套，再乘 NL 变体。
-  # 只留常规四个字重，且两个族名都要留：
-  #   *NerdFontMono-*  →「X Nerd Font Mono」  终端真正该选的那个
-  #   *NerdFont-*      →「X Nerd Font」        所有文档和搜索框里用的名字
-  # 只留 Mono 的话，用户在设置里搜「JetBrainsMono Nerd Font」什么都搜不到，
-  # 会合理地以为字体没装上（这就是第一版的实际反馈）。
-  # -x '*NL*' 去掉无连字（NL）副本：它只是又两个几乎同名的族，把选择框搞乱。
-  # 通配符故意不带族名前缀：Meslo 那边的文件名是 MesloLGS* 而不是 Meslo*。
-  local keep=(
-    '*NerdFontMono-Regular.ttf' '*NerdFontMono-Bold.ttf'
-    '*NerdFontMono-Italic.ttf' '*NerdFontMono-BoldItalic.ttf'
-    '*NerdFont-Regular.ttf' '*NerdFont-Bold.ttf'
-    '*NerdFont-Italic.ttf' '*NerdFont-BoldItalic.ttf'
-    '*OFL*' '*LICENSE*'
-  )
   mkdir -p "$dir"
-  unzip -oq "$zip" "${keep[@]}" -x '*NL*' -d "$dir" 2>/dev/null
+  unzip -oq "$zip" "${FONT_KEEP[@]}" -x "${FONT_EXCLUDE[@]}" -d "$dir" 2>/dev/null
   # 故意不看 unzip 的退出码：只要有一个模式没匹配上它就退 1（warning），
   # 而 keep 里的许可证名各家不一样，本来就允许落空。
   # 真正该判断的是「到底有没有解出字体文件」—— 没有才说明上游改了命名，
@@ -1356,6 +1451,34 @@ step_tmux_cleanup() {
   log_ok "socket 清理完成"
 }
 
+# Ptyxis（Ubuntu 24.10 起的 GNOME 默认终端）的字体不在 profile 里，而是
+# 应用级的 font-name，且 use-system-font 开着时它整个不生效 —— 于是
+# 「字体明明装好了，终端里还是方框」。把两条命令直接打出来，不代跑：
+# 改用户的桌面设置得他自己按回车。
+#
+# 键的位置在版本间换过（旧版在 profile 的 font / use-system-font 下），
+# 所以先问 gsettings 有哪些键，再决定打哪一套。
+ptyxis_font_hint() {
+  local family="$1" keys
+  command -v gsettings >/dev/null 2>&1 || return 0
+  keys="$(gsettings list-keys org.gnome.Ptyxis 2>/dev/null || true)"
+  [[ -n "$keys" ]] || return 0
+  printf '\n Ptyxis（当前终端）可直接执行：\n'
+  if grep -qx 'font-name' <<<"$keys"; then
+    printf "      gsettings set org.gnome.Ptyxis use-system-font false\n"
+    printf "      gsettings set org.gnome.Ptyxis font-name '%s Mono 12'\n" "$family"
+  else
+    # 引号闭合的 heredoc：这里在**打印给人抄的命令**，$P 不能在这里展开
+    cat <<'EOF'
+      P=$(gsettings get org.gnome.Ptyxis default-profile-uuid | tr -d "'")
+      S="org.gnome.Ptyxis.Profile:/org/gnome/Ptyxis/Profiles/$P/"
+      gsettings set "$S" use-system-font false
+EOF
+    printf "      gsettings set \"\$S\" font '%s Mono 12'\n" "$family"
+  fi
+  printf ' 其他终端（GNOME Terminal / kitty / Alacritty / WezTerm）在各自设置里改。\n'
+}
+
 step_tmux_notes() {
   local p font_note choice spec
   p="$(tmux_prefix_value)"
@@ -1363,8 +1486,10 @@ step_tmux_notes() {
   # 字体这一步只能装文件，改终端配置得用户自己来，所以最后一定要再说一遍
   choice="$(ans tmux.font)"
   spec="${NERD_FONTS[$choice]:-}"
+  local family=""
   if [[ -n "$spec" ]]; then
-    font_note="已安装 ${spec#*|}，把终端字体设为「${spec#*|} Mono」"
+    family="${spec#*|}"
+    font_note="已安装 $family，把终端字体设为「$family Mono」"
   else
     font_note="未安装 Nerd Font；图标显示成方框时装一个再设为终端字体"
   fi
@@ -1387,8 +1512,9 @@ $RULE
 
  3) 终端字体：
       $font_note
-$RULE
 EOF
+  [[ -n "$family" ]] && ptyxis_font_hint "$family"
+  printf '%s\n' "$RULE"
   log_ok "全部完成"
 }
 

@@ -46,9 +46,9 @@ Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file th
 
 - **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
 - **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 179 bats tests, and a real install inside three
-  distro containers. No artifact is uploaded, no branch is written to, no
-  `dist/` is committed.
+  `--lint`, shellcheck, shfmt, 197 bats tests, and a real install inside four
+  distro containers (Ubuntu 22.04/24.04, Debian 12, Fedora 40). No artifact is
+  uploaded, no branch is written to, no `dist/` is committed.
 - **The download URL is just the file in the repo:**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
 
@@ -62,12 +62,13 @@ is missing here, it is one that was taken out.
 
 ## What it does
 
-`TMUX.sh` installs and configures tmux: install method (apt / build from source /
-skip), prefix key, 8 common plugins (TPM, sensible, yank, cpu, battery, Catppuccin,
-vim-tmux-navigator, tmuxifier), 5 base options (mouse, Vi copy mode, 1-based
-indexing, intuitive splits, `prefix+r` reload), a Nerd Font (downloaded and
-installed for you — without one the status bar icons are just boxes), and a full
-uninstall. Picking **recommended** expands to a 21-step plan in one keystroke.
+`TMUX.sh` installs and configures tmux: install method (package manager — apt,
+dnf, pacman or zypper — build from source, or skip), prefix key, 8 common plugins
+(TPM, sensible, yank, cpu, battery, Catppuccin, vim-tmux-navigator, tmuxifier),
+5 base options (mouse, Vi copy mode, 1-based indexing, intuitive splits,
+`prefix+r` reload), a Nerd Font (downloaded and installed for you — without one
+the status bar icons are just boxes), and a full uninstall. Picking
+**recommended** expands to a 21-step plan in one keystroke.
 
 ## Architecture
 
@@ -198,7 +199,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 179 bats tests in six layers:
+images. 197 bats tests in six layers:
 
 | File | Covers | Needs |
 | --- | --- | --- |
@@ -207,7 +208,7 @@ images. 179 bats tests in six layers:
 | `tests/conf.bats` | the generated `~/.tmux.conf`, and idempotence | a temp HOME |
 | `tests/cli.bats` | flag parsing, exit codes, `curl \| bash`, lint negatives | nothing |
 | `tests/ask.bats` | interactive navigation, keystrokes injected via `DOT_INPUT_FD` | nothing |
-| `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic | nothing |
+| `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic and extraction whitelist, package-manager layer, tmux version floor | nothing |
 
 Only `conf.bats` touches the filesystem, entirely inside `$BATS_TEST_TMPDIR`.
 Interactive tests need no pty — keystrokes are fed through a plain fd:

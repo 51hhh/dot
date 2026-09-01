@@ -218,3 +218,210 @@ run_fake_plan() {
   [ "$status" -eq 1 ]
   [[ "$output" == *jetbrains* ]]
 }
+
+# ── 字体解压白名单 ───────────────────────────────────────────────
+#
+# 真正做匹配的是 unzip，CI 里会拿真包跑一遍端到端。这里用真包的文件名清单
+# 复算一次白名单，把「哪些文件会被留下」钉在测试里 —— 那个 bug
+# （只留 Mono、族名少一个、用户在设置里搜不到）就是白名单写窄了一格。
+
+# unzip 的 include/exclude 语义：先排除，再看有没有 include 命中
+font_kept() {
+  local name="$1" p
+  for p in "${FONT_EXCLUDE[@]}"; do
+    [[ "$name" == $p ]] && return 1
+  done
+  for p in "${FONT_KEEP[@]}"; do
+    [[ "$name" == $p ]] && return 0
+  done
+  return 1
+}
+
+# JetBrainsMono.zip 里真实存在的文件名（截取有代表性的一部分）
+PKG_FILES=(
+  JetBrainsMonoNerdFont-Regular.ttf
+  JetBrainsMonoNerdFont-Bold.ttf
+  JetBrainsMonoNerdFont-Italic.ttf
+  JetBrainsMonoNerdFont-BoldItalic.ttf
+  JetBrainsMonoNerdFontMono-Regular.ttf
+  JetBrainsMonoNerdFontMono-Bold.ttf
+  JetBrainsMonoNerdFontMono-Italic.ttf
+  JetBrainsMonoNerdFontMono-BoldItalic.ttf
+  JetBrainsMonoNerdFontPropo-Regular.ttf
+  JetBrainsMonoNerdFont-Thin.ttf
+  JetBrainsMonoNerdFont-ExtraBold.ttf
+  JetBrainsMonoNerdFontMono-Medium.ttf
+  JetBrainsMonoNerdFontMono-SemiBoldItalic.ttf
+  JetBrainsMonoNLNerdFont-Regular.ttf
+  JetBrainsMonoNLNerdFontMono-Regular.ttf
+  JetBrainsMonoNLNerdFontPropo-Bold.ttf
+  OFL.txt
+  README.md
+)
+
+@test "白名单只留两个族各四个常规字重" {
+  local kept=() f
+  for f in "${PKG_FILES[@]}"; do
+    font_kept "$f" && kept+=("$f")
+  done
+  # 8 个 ttf + OFL.txt
+  [ "${#kept[@]}" -eq 9 ]
+  for f in JetBrainsMonoNerdFont-Regular.ttf JetBrainsMonoNerdFontMono-Regular.ttf \
+    JetBrainsMonoNerdFontMono-BoldItalic.ttf OFL.txt; do
+    printf '%s\n' "${kept[@]}" | grep -qx "$f" || { echo "白名单漏了 $f"; return 1; }
+  done
+}
+
+@test "白名单里必须同时有 Mono 族和非 Mono 族" {
+  # 少了 *NerdFont-* 那一组，设置里搜「JetBrainsMono Nerd Font」就是空的
+  font_kept JetBrainsMonoNerdFontMono-Regular.ttf
+  font_kept JetBrainsMonoNerdFont-Regular.ttf
+}
+
+@test "白名单排除 NL（无连字）副本与 Propo（变宽）副本" {
+  ! font_kept JetBrainsMonoNLNerdFont-Regular.ttf
+  ! font_kept JetBrainsMonoNLNerdFontMono-Regular.ttf
+  ! font_kept JetBrainsMonoNerdFontPropo-Regular.ttf
+}
+
+@test "白名单排除常规四档以外的字重" {
+  ! font_kept JetBrainsMonoNerdFont-Thin.ttf
+  ! font_kept JetBrainsMonoNerdFontMono-Medium.ttf
+  ! font_kept JetBrainsMonoNerdFontMono-SemiBoldItalic.ttf
+}
+
+@test "白名单对 Meslo 的文件名同样成立（通配符不带族名前缀）" {
+  # Meslo 包里的文件叫 MesloLGS*，不是 Meslo* —— 前缀写死就一个都匹配不上
+  font_kept MesloLGSNerdFontMono-Regular.ttf
+  font_kept MesloLGSNerdFont-Bold.ttf
+}
+
+# ── 包管理器 ─────────────────────────────────────────────────────
+#
+# apt 之外的发行版以前是硬失败，而失败点显示为「安装 tmux」——
+# 看起来像 tmux 装不上，其实是脚本不认识 dnf。
+
+@test "detect_pm 按 apt-get / dnf / pacman / zypper 的顺序识别" {
+  local bin="$BATS_TEST_TMPDIR/pm"
+  mkdir -p "$bin"
+  printf '#!/bin/sh\n' > "$bin/dnf"
+  chmod +x "$bin/dnf"
+  PATH="$bin" run detect_pm
+  [ "$status" -eq 0 ]
+  [ "$output" = dnf ]
+}
+
+@test "detect_pm 四个都没有时失败（而不是回落到 apt-get 然后炸在半路）" {
+  local bin="$BATS_TEST_TMPDIR/empty"
+  mkdir -p "$bin"
+  PATH="$bin" run detect_pm
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+}
+
+@test "每个包管理器都有可用的装包命令，且 pacman 带 --needed（幂等）" {
+  dot_sudo() { printf '%s\n' "$*"; }
+  run pm_install pacman tmux
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"--needed"* ]]
+  [[ "$output" == *"--noconfirm"* ]]
+  local pm
+  for pm in apt-get dnf zypper; do
+    run pm_install "$pm" tmux
+    [ "$status" -eq 0 ] || { echo "$pm 没有装包命令"; return 1; }
+    [[ "$output" == *tmux* ]] || { echo "$pm 没把包名传下去"; return 1; }
+  done
+}
+
+@test "未知包管理器时 pm_install / pm_build_deps 都失败" {
+  dot_sudo() { printf '%s\n' "$*"; }
+  run pm_install brew tmux
+  [ "$status" -ne 0 ]
+  run pm_build_deps brew
+  [ "$status" -ne 0 ]
+}
+
+@test "四个包管理器的编译依赖都包含编译器、libevent、ncurses、bison" {
+  local pm deps
+  for pm in apt-get dnf pacman zypper; do
+    deps="$(pm_build_deps "$pm")"
+    [[ "$deps" == *bison* ]] || { echo "$pm 缺 bison"; return 1; }
+    [[ "$deps" == *event* ]] || { echo "$pm 缺 libevent"; return 1; }
+    [[ "$deps" == *curses* ]] || { echo "$pm 缺 ncurses"; return 1; }
+    # 编译器：apt 走 build-essential，pacman 走 base-devel，其余是 gcc
+    [[ "$deps" == *gcc* || "$deps" == *build-essential* || "$deps" == *base-devel* ]] \
+      || { echo "$pm 缺编译器"; return 1; }
+  done
+}
+
+# ── tmux 版本下限 ────────────────────────────────────────────────
+#
+# 发行版给的 tmux 低于 3.2 时，catppuccin 的状态栏是空的而不是报错 ——
+# 那种「装完了但看起来没生效」最难自查，所以必须在安装那一步就说出来。
+
+@test "version_ge 的真值表（含相等）" {
+  version_ge 3.4 3.2
+  version_ge 3.2 3.2
+  version_ge 3.10 3.9   # 字符串比较会判错，必须是版本比较
+  ! version_ge 3.0 3.2
+  ! version_ge 2.9 3.2
+}
+
+@test "version_ge 不会被 pipefail 判成失败" {
+  # 写成 `sort -V | head -1` 时 sort 吃 SIGPIPE，整条管道退 141，
+  # 于是任何版本都「不满足」—— 和字体那个 141 是同一种病
+  set -o pipefail
+  version_ge 3.4 3.2
+}
+
+@test "版本低于下限时告警并给出改用源码编译的命令" {
+  run warn_if_tmux_too_old 3.0
+  [[ "$output" == *"低于插件要求"* ]]
+  [[ "$output" == *"tmux.install=source"* ]]
+}
+
+@test "版本达标或测不出版本时不告警" {
+  run warn_if_tmux_too_old 3.4
+  [ -z "$output" ]
+  run warn_if_tmux_too_old ""
+  [ -z "$output" ]
+}
+
+@test "tmux_version 去掉字母后缀（3.5a → 3.5）" {
+  tmux() { printf 'tmux 3.5a\n'; }
+  run tmux_version
+  [ "$output" = 3.5 ]
+}
+
+# ── Ptyxis 字体提示 ──────────────────────────────────────────────
+#
+# 字体装好了、终端里还是方框，是这套流程最后一个真实的坑：
+# Ptyxis 的字体是应用级的 font-name，而且 use-system-font 开着时完全不生效。
+
+@test "有 Ptyxis 且键在应用级时，打印 font-name 那一套" {
+  gsettings() {
+    case "$*" in
+      "list-keys org.gnome.Ptyxis") printf 'font-name\nuse-system-font\n' ;;
+    esac
+  }
+  run ptyxis_font_hint "JetBrainsMono Nerd Font"
+  [[ "$output" == *"gsettings set org.gnome.Ptyxis use-system-font false"* ]]
+  [[ "$output" == *"font-name 'JetBrainsMono Nerd Font Mono 12'"* ]]
+}
+
+@test "旧版 Ptyxis（键在 profile 下）时打印 profile 那一套" {
+  gsettings() {
+    case "$*" in
+      "list-keys org.gnome.Ptyxis") printf 'default-profile-uuid\nprofile-uuids\n' ;;
+    esac
+  }
+  run ptyxis_font_hint "JetBrainsMono Nerd Font"
+  [[ "$output" == *"default-profile-uuid"* ]]
+  [[ "$output" == *"Ptyxis.Profile"* ]]
+}
+
+@test "没装 Ptyxis 时什么都不打印（不给用户无效命令）" {
+  gsettings() { return 2; }
+  run ptyxis_font_hint "JetBrainsMono Nerd Font"
+  [ -z "$output" ]
+}
