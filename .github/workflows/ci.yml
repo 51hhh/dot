@@ -11,21 +11,26 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v4 跑在 Node 20 上，runner 已经在强制降级并每次都留一条弃用告警；
+      # 下一步就是直接不能用。v5 只是换了 Node 运行时，用法一样。
+      - uses: actions/checkout@v5
 
       # shfmt 版本必须钉死：用 releases/latest/download/ 需要文件名里带上
       # 最新的版本号，写死某个版本号就会在下一次发布时 404（curl exit 22）。
       # 钉死同时也避免新版格式规则一改就把 CI 弄红。
+      # bats 同理：clone master 等于让上游的任意一次提交决定我们的 CI 红绿。
       - name: 安装 shellcheck / shfmt / bats
         env:
           SHFMT_VERSION: v3.14.0
+          BATS_VERSION: v1.14.0
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq shellcheck
           curl -fsSL -o /tmp/shfmt \
             "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64"
           chmod +x /tmp/shfmt && sudo mv /tmp/shfmt /usr/local/bin/shfmt
-          git clone --depth 1 https://github.com/bats-core/bats-core.git /tmp/bats
+          git clone --depth 1 --branch "$BATS_VERSION" \
+            https://github.com/bats-core/bats-core.git /tmp/bats
           sudo /tmp/bats/install.sh /usr/local
           # 装没装上，现在就说清楚，而不是等 run-tests.sh 静默回落到 docker
           shellcheck --version | head -2
@@ -45,7 +50,10 @@ jobs:
         # 脚本以前硬写 apt-get，非 Debian 系跑到「安装 tmux」就失败，
         # 而失败信息看起来像 tmux 装不上，不像「不认识 dnf」。
         # pacman / zypper 分支没有容器覆盖，只有单元测试。
-        image: [ubuntu:22.04, ubuntu:24.04, debian:12, fedora:40]
+        #
+        # fedora 用还在支持期的版本：EOL 之后镜像还在，但仓库元数据迟早
+        # 被挪进 archive，那时 dnf install 会 404，而这跟脚本没有关系。
+        image: [ubuntu:22.04, ubuntu:24.04, debian:12, fedora:44]
     container:
       image: ${{ matrix.image }}
     steps:
@@ -60,7 +68,7 @@ jobs:
             dnf install -y -q bash ca-certificates git sudo procps-ng findutils
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       # 字体在这里跳过：每个容器各拉一遍上百 MB 的 zip，既慢又把 CI 的
       # 绿灯绑到 nerd-fonts 的发布页和限速上。字体单独在下面一个容器里测。

@@ -46,6 +46,28 @@ gen() {
   grep -q 'old yes' "${baks[0]}"
 }
 
+@test "内容没变时不再新建备份（反复跑不攒一堆一样的 .bak）" {
+  # 生成是幂等的，所以「改个插件再跑一遍」很正常；每次都留一个内容
+  # 完全相同的 .bak.<时间戳> 就只是攒垃圾。
+  gen --preset recommended "${CONF_STEPS[@]}"
+  gen --preset recommended "${CONF_STEPS[@]}"
+  local baks=( "$CONF".bak.* )
+  [ "${#baks[@]}" -eq 1 ]
+  gen --preset recommended "${CONF_STEPS[@]}"
+  baks=( "$CONF".bak.* )
+  [ "${#baks[@]}" -eq 1 ]
+}
+
+@test "内容变了就照旧备份（判据不是「有生成标记」，那样会吃掉手改）" {
+  gen --preset recommended "${CONF_STEPS[@]}"
+  gen --preset recommended "${CONF_STEPS[@]}"   # 备份 #1
+  printf 'set -g my-own-edit yes\n' >> "$CONF"  # 用户在生成之后手改
+  gen --preset recommended "${CONF_STEPS[@]}"   # 备份 #2：手改必须留下来
+  local baks=( "$CONF".bak.* )
+  [ "${#baks[@]}" -eq 2 ]
+  grep -qh 'my-own-edit' "${baks[@]}"
+}
+
 @test "重复运行两次结果一致（幂等）" {
   gen --preset recommended "${CONF_STEPS[@]}"
   cp "$CONF" "$BATS_TEST_TMPDIR/first"

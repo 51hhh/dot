@@ -122,6 +122,24 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [[ "$output" == *"格式错误"* ]]
 }
 
+@test "报错指的行号是文件里真实的行号（注释和空行也算行）" {
+  # 行号的唯一用途就是让人去文件里找那一行。用「已载入几条答案」当行号，
+  # 注释和空行不计数，指到的就是另一行 —— 比不报行号更糟。
+  local f="$BATS_TEST_TMPDIR/bad2.txt"
+  printf '# 注释\n\ntmux.profile=custom\nthis is not a pair\n' > "$f"
+  run SH --answers "$f" --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"第 4 行"* ]]
+}
+
+@test "值不合法时的行号同样是真实行号" {
+  local f="$BATS_TEST_TMPDIR/bad3.txt"
+  printf '\n\ntmux.font=comicsans\n' > "$f"
+  run SH --answers "$f" --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"第 3 行"* ]]
+}
+
 # ── 答案 key 拼错必须报错，不能静默 ──────────────────────────────
 #
 # 少个 s 的 tmux.plugin 曾经会被接受、计划里一个插件都没有。
@@ -378,6 +396,19 @@ PIPED() { cat "$BATS_TEST_DIRNAME/../TMUX.sh" | bash -s -- "$@"; }
   [ "$status" -eq 1 ]
   [[ "$output" == *"不接受值"* ]]
   [[ "$output" == *jetbrans* ]]
+}
+
+@test "单选题给空值报错，多选题给空值合法" {
+  # 空值以前恒过：清单是用空格拼的，has_word 拿空串去查永远命中。
+  # 于是 `--set tmux.install=` 静默接受，计划里安安静静地少一步安装。
+  run SH --set tmux.install= --dry-run
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"需要一个值"* ]]
+  [[ "$output" == *apt* ]]  # 报错要带上可用值
+  # 多选的空值是「什么都不选」，是正当答案
+  run SH --set tmux.profile=custom --set tmux.plugins= --dry-run
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"@plugin"* ]]
 }
 
 @test "执行前的 lint 报错只打印一遍" {

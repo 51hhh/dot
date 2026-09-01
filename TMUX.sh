@@ -918,6 +918,20 @@ pm_install() {
   esac
 }
 
+# 卸载。-Rs / autoremove 是为了把只被 tmux 拉进来的依赖也带走 ——
+# 「完全卸载」这个选项的字面意思。
+pm_remove() {
+  local pm="$1"
+  shift
+  case "$pm" in
+    apt-get) dot_sudo apt-get remove --purge -y "$@" ;;
+    dnf) dot_sudo dnf remove -y "$@" ;;
+    pacman) dot_sudo pacman -Rs --noconfirm "$@" ;;
+    zypper) dot_sudo zypper remove -y --clean-deps "$@" ;;
+    *) return 1 ;;
+  esac
+}
+
 # 运行时依赖（tmux git unzip … xclip wl-clipboard）四家包名恰好一致，
 # 只有编译依赖不一样，所以只有这一张表。
 pm_build_deps() {
@@ -978,6 +992,25 @@ conf_write() {
   fi
 }
 
+# 当前配置和最近一次备份逐字节相同 ⇒ 再备份一次只是攒垃圾。
+# 生成本身是幂等的，所以反复跑（很正常：改个插件再跑一遍）会留下一串
+# 内容完全一样的 .bak.<时间戳>。
+#
+# 判据故意是「与最近的备份相同」，不是「文件里有 TMUX.sh 的生成标记」：
+# 后者会把用户在生成之后手改的内容直接覆盖掉，一份备份都不留。
+# 时间戳格式 %Y%m%d-%H%M%S 的字典序就是时间序，所以 glob 的最后一个最新。
+backup_is_redundant() {
+  local newest="" bak
+  for bak in "$TMUX_CONF".bak.*; do
+    [[ -f "$bak" ]] && newest="$bak"
+  done
+  [[ -n "$newest" ]] || return 1
+  # cmp 在 diffutils 里，精简容器上可能没有；那时它退 127，等于「不确定」，
+  # 于是照旧备份 —— 这个方向的错只是多一个文件，反过来会丢数据。
+  cmp -s "$TMUX_CONF" "$newest" 2>/dev/null || return 1
+  log_info "配置与最近的备份一致，跳过备份：$newest"
+}
+
 # tmux 键名。留白、引号、分号都会让 tmux 静默忽略整行配置：
 # 实测 tmux 3.6 对 `set -g prefix foo bar` 不报错，prefix 仍是 C-b。
 valid_prefix_key() { [[ "$1" =~ ^[A-Za-z0-9-]+$ ]]; }
@@ -1008,16 +1041,29 @@ step_tmux_apt() {
     log_error "$pm 刷新软件源失败；请检查网络、软件源或 sudo 权限。"
     return 1
   fi
-  # xclip 与 wl-clipboard 都装：tmux-yank 按会话环境二选一，X11 与 Wayland
-  # 在同一台机器上都可能出现（GNOME 下 Xwayland 应用就是 X11 剪贴板）。
-  local pkgs=(tmux git unzip wget curl fontconfig xclip wl-clipboard)
+  # 这几个是真的缺一不可：没有 tmux 谈不上配置，unzip / fontconfig 是字体那步的前提
+  local pkgs=(tmux git unzip wget curl fontconfig)
   if ! pm_install "$pm" "${pkgs[@]}"; then
     log_error "$pm 安装失败；tmux 未安装。"
     return 1
   fi
-  # acpi 只有 tmux-battery 在台式机上用得到，缺了不该让整步失败
-  pm_install "$pm" acpi \
-    || log_warn "可选包 acpi 安装失败，已跳过（电池插件可能缺少电量信息）。"
+  # 可选包逐个装，而不是拼进上面那一组。整组 install 的语义是「一个包名在
+  # 这个发行版的源里不存在，整组都不装」—— 于是一个剪贴板辅助程序就能让
+  # tmux 装不上，而失败信息只说「安装失败」。四家包名是否都叫这个，
+  # CI 只证到 apt-get / dnf，pacman / zypper 上不该由这里赌。
+  #
+  # xclip 与 wl-clipboard 都装：tmux-yank 按会话环境二选一，X11 与 Wayland
+  # 在同一台机器上都可能出现（GNOME 下 Xwayland 应用就是 X11 剪贴板）。
+  # acpi 只有 tmux-battery 在台式机上用得到。
+  local opt failed=()
+  for opt in xclip wl-clipboard acpi; do
+    # 输出丢掉：三次 install 的正常刷屏没有信息量，失败原因下面统一说
+    pm_install "$pm" "$opt" >/dev/null 2>&1 || failed+=("$opt")
+  done
+  if ((${#failed[@]})); then
+    log_warn "可选包未装上：${failed[*]}"
+    log_warn "（xclip / wl-clipboard 关系到 tmux-yank 能否写系统剪贴板，acpi 关系到电池插件的电量）"
+  fi
 
   hash -r
   local v
@@ -1096,9 +1142,18 @@ step_tmux_source() {
 }
 
 step_tmux_header() {
-  if [[ -f "$TMUX_CONF" ]]; then
-    local bak
-    bak="$TMUX_CONF.bak.$(date +%Y%m%d-%H%M%S)"
+  if [[ -f "$TMUX_CONF" ]] && ! backup_is_redundant; then
+    # 时间戳只到秒。同一秒内跑两次（脚本跑得比一秒快）会算出同一个文件名，
+    # 直接 cp 就把刚才那份备份覆盖掉了 —— 备份的意义正好在这里落空。
+    # 同秒的序号会打乱 backup_is_redundant 的「最近一份」判断（.10 排在 .2 前），
+    # 但那个方向的错只是多留一个备份文件。
+    local bak base n=1
+    base="$TMUX_CONF.bak.$(date +%Y%m%d-%H%M%S)"
+    bak="$base"
+    while [[ -e "$bak" ]]; do
+      bak="$base.$n"
+      n=$((n + 1))
+    done
     if ! cp "$TMUX_CONF" "$bak"; then
       log_error "备份原配置失败：$TMUX_CONF"
       return 1
@@ -1294,6 +1349,34 @@ declare -ga FONT_KEEP=(
 # 挑错了不会报错、只是连字没了 —— 与其解释，不如不装。
 declare -ga FONT_EXCLUDE=('*NL*')
 
+# 幂等判断：已经装齐了就别再下一遍上百 MB。
+#
+# 「装齐」= 两个族都在。只判一个族名（`fc-list | grep -qiF "X Nerd Font"`）会被
+# 「X Nerd Font Mono」这一行满足 —— 而那恰好是上一版脚本（只解 *NerdFontMono-*）
+# 留下的半装状态：跑新版本会被判成「已装好」直接跳过，于是那个「设置里搜不到
+# X Nerd Font」的 bug 修了也到不了已经装过的人手里。
+#
+# 两条判据，命中任一即可：
+#   ① 自己装的那个目录里两种文件名都有 —— 与解压白名单一一对应，
+#      不依赖 fontconfig 把文件名映射成什么族名（Meslo 那边就不同名）。
+#   ② fontconfig 里两个族名都在 —— 覆盖「系统级装过 / 装在别的目录」。
+# 都不成立就重新装一遍：多下一次是浪费，判错方向则是那个 bug 复发。
+font_installed() {
+  local family="$1" dir="$2" fams
+  if [[ -n "$(find "$dir" -name '*NerdFontMono-Regular.ttf' -print -quit 2>/dev/null)" ]] \
+    && [[ -n "$(find "$dir" -name '*NerdFont-Regular.ttf' -print -quit 2>/dev/null)" ]]; then
+    return 0
+  fi
+  command -v fc-list >/dev/null 2>&1 || return 1
+  # 先接进变量再匹配，不写 fc-list | grep -q：grep -q 命中就退出，
+  # fc-list 吃到 SIGPIPE 死掉，§1 的 pipefail 于是把整条管道判成 141 ——
+  # 「已经装好了」会被读成「还没装」，每次都重下一遍。
+  fams="$(fc-list --format '%{family[0]}\n' 2>/dev/null || true)"
+  [[ -n "$fams" ]] || return 1
+  # 整行精确匹配（-x）：族名之间是前缀关系，子串匹配区分不了
+  grep -qxF "$family" <<<"$fams" && grep -qxF "$family Mono" <<<"$fams"
+}
+
 # 装字体要 unzip + fontconfig，而这两个在「跳过 tmux 安装」的流程里不会被装上，
 # 所以这里自己补一次，补不上就明确说清楚缺什么。
 _ensure_font_deps() {
@@ -1327,16 +1410,8 @@ step_tmux_font() {
   family="${spec#*|}"
   dir="$HOME/.local/share/fonts/$pkg"
 
-  # 幂等：已经装过就别再下一遍上百 MB。
-  # 先把 fc-list 的输出接进变量再匹配，不写 fc-list | grep -q：
-  # grep -q 命中就退出，fc-list 吃到 SIGPIPE 死掉，§1 的 pipefail 于是
-  # 把整条管道判成 141 —— 「已经装好了」会被读成「还没装」，每次都重下一遍。
-  local installed=""
-  if command -v fc-list >/dev/null 2>&1; then
-    installed="$(fc-list 2>/dev/null || true)"
-  fi
-  if [[ -n "$installed" ]] && grep -qiF "$family" <<<"$installed"; then
-    log_ok "$family 已安装，跳过下载。"
+  if font_installed "$family" "$dir"; then
+    log_ok "$family 与 $family Mono 已安装，跳过下载。"
     return 0
   fi
 
@@ -1435,6 +1510,24 @@ step_tmux_cleanup() {
     log_warn "  tmux kill-server && rm -rf /tmp/tmux-\$(id -u)"
     return 0
   fi
+  # 有会话在跑就一个都不动。kill-server 会连带杀掉会话里所有进程（编译、
+  # 下载、ssh 全在里面），而这一步的目的只是「别让旧二进制的 socket 留下来」——
+  # 远远不值这个代价。删 socket 目录同样会把还活着的会话弄成孤儿，所以
+  # 两件事一起跳过。$TMUX 只挡「自己在 tmux 里跑」，挡不住 detached 的会话。
+  local sessions=""
+  if command -v tmux >/dev/null 2>&1; then
+    sessions="$(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)"
+  fi
+  if [[ -n "$sessions" ]]; then
+    log_warn "检测到正在运行的 tmux 会话，不做清理（kill-server 会杀掉里面的进程）："
+    local s
+    while IFS= read -r s; do printf '        %s\n' "$s" >&2; done <<<"$sessions"
+    log_warn "新配置对新建的会话立即生效；旧会话里按 prefix + r 重载。"
+    log_warn "确实要清理时，退出全部会话后执行："
+    log_warn "  tmux kill-server && rm -rf /tmp/tmux-\$(id -u)"
+    return 0
+  fi
+  # 没有会话但 server 还在（比如上一次装到一半）：这时候杀掉是安全的
   if command -v tmux >/dev/null 2>&1 && pgrep -u "$(id -u)" -x tmux >/dev/null 2>&1; then
     log_info "停止当前用户的 tmux server..."
     tmux kill-server 2>/dev/null || log_warn "kill-server 未成功，继续清理 socket。"
@@ -1526,14 +1619,16 @@ step_tmux_uninstall() {
     log_info "已关闭所有 tmux 会话"
   fi
 
-  if command -v apt-get >/dev/null 2>&1; then
-    dot_sudo apt-get remove --purge -y tmux >/dev/null 2>&1 \
-      && log_info "apt: tmux 已卸载"
-    dot_sudo apt-get autoremove -y >/dev/null 2>&1 || true
-  elif command -v dnf >/dev/null 2>&1; then
-    dot_sudo dnf remove -y tmux >/dev/null 2>&1 && log_info "dnf: tmux 已卸载"
-  elif command -v pacman >/dev/null 2>&1; then
-    dot_sudo pacman -R --noconfirm tmux >/dev/null 2>&1 && log_info "pacman: tmux 已卸载"
+  # 走 §9 的包管理器抽象，不再自己写一遍 if/elif：那份副本漏了 zypper，
+  # 于是「安装认四家、卸载只认三家」——同一个脚本对同一台机器两种认知。
+  local pm
+  if pm="$(detect_pm)"; then
+    if pm_remove "$pm" tmux >/dev/null 2>&1; then
+      log_info "$pm: tmux 已卸载"
+    else
+      log_info "$pm 未卸载 tmux（可能本来就不是包管理器装的）"
+    fi
+    [[ "$pm" == apt-get ]] && dot_sudo apt-get autoremove -y >/dev/null 2>&1
   fi
 
   if [[ -f /usr/local/bin/tmux ]]; then
@@ -1616,7 +1711,15 @@ require_answer_value() {
   kind="${Q["$k.kind"]}"
   [[ "$kind" == one || "$kind" == many ]] || return 0
   keys="$(option_keys "$k")"
-  # 多选拆成词逐个查；单选整体就是一个词。空值对多选合法（等于什么都没选）
+  # 单选不接受空值。has_word 拿空串去查恒真（清单里到处是空格），于是
+  # `--set tmux.install=` 会被静默接受，然后所有 tmux.install=... 的 when
+  # 都不成立 —— 计划里安安静静地少一步。多选的空值是正当答案（什么都不选）。
+  if [[ "$kind" == one && -z "$v" ]]; then
+    log_error "$src：$k 需要一个值（单选题不接受空值）"
+    log_error "可用值：$(option_keys_human "$k")"
+    return 1
+  fi
+  # 多选拆成词逐个查；单选整体就是一个词
   if [[ "$kind" == many ]]; then
     read -r -a words <<<"$v"
   else
@@ -1791,24 +1894,28 @@ require_question_key() {
 }
 
 load_answers() {
-  local file="$1" line k v n=0
+  # n 数「载入了几条答案」，lineno 数「读到第几行」。用同一个变量兼两职时，
+  # 注释和空行不计数，报错就会指到一个错的行号 —— 而这行号的唯一用途
+  # 就是让人去文件里找那一行。
+  local file="$1" line k v n=0 lineno=0
   [[ -r "$file" ]] || {
     log_error "读不到答案文件：$file"
     return 1
   }
   while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
     line="${line%%#*}"
     line="${line#"${line%%[![:space:]]*}"}"
     line="${line%"${line##*[![:space:]]}"}"
     [[ -z "$line" ]] && continue
     [[ "$line" == *=* ]] || {
-      log_error "答案文件第 $((n + 1)) 行格式错误：$line"
+      log_error "答案文件第 $lineno 行格式错误：$line"
       return 1
     }
     k="${line%%=*}"
     v="${line#*=}"
-    require_question_key "$k" "$file 第 $((n + 1)) 行" || return 1
-    require_answer_value "$k" "$v" "$file 第 $((n + 1)) 行" || return 1
+    require_question_key "$k" "$file 第 $lineno 行" || return 1
+    require_answer_value "$k" "$v" "$file 第 $lineno 行" || return 1
     ANS["$k"]="$v"
     n=$((n + 1))
   done <"$file"

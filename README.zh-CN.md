@@ -45,8 +45,8 @@ bash TMUX.sh --preset recommended --yes
 
 - **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
 - **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、197 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
-  Fedora 40）里真实安装一遍。不上传 artifact、不写回分支、不提交 `dist/`。
+  shfmt、211 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
+  Fedora 44）里真实安装一遍。不上传 artifact、不写回分支、不提交 `dist/`。
 - **下载链接就是仓库里的那个文件：**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
 
@@ -188,7 +188,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-197 个 bats 测试分六层：
+211 个 bats 测试分六层：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |
@@ -197,7 +197,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 | `tests/conf.bats` | 生成的 `~/.tmux.conf` 内容与幂等性 | 临时 HOME |
 | `tests/cli.bats` | 参数解析、退出码、`curl \| bash`、lint 反例 | 无 |
 | `tests/ask.bats` | 交互导航，按键经 `DOT_INPUT_FD` 注入 | 无 |
-| `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断与解压白名单、包管理器抽象、tmux 版本下限 | 无 |
+| `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断与解压白名单、包管理器抽象、tmux 版本下限、清理步骤不杀会话 | 无 |
 
 只有 `conf.bats` 碰文件系统，且全在 `$BATS_TEST_TMPDIR` 里。
 交互测试不需要 pty —— 按键从一个普通 fd 喂进去：
@@ -251,7 +251,10 @@ run-tests.sh     # 本地 / Docker 测试入口
 
 - 安装 tmux 需要 `sudo`。只在必需的步骤调用，且统一走 `dot_sudo` 这一个入口 ——
   `grep dot_sudo TMUX.sh` 能看全部用法。
-- 覆盖 `~/.tmux.conf` 之前会备份为 `~/.tmux.conf.bak.<时间戳>`。
+- 覆盖 `~/.tmux.conf` 之前会备份为 `~/.tmux.conf.bak.<时间戳>`；当前文件与最近一份
+  备份逐字节相同时不再新建，反复跑不会攒出一堆一样的备份。
+- 绝不杀掉正在运行的 tmux 会话。清理 socket 那一步遇到活着的会话就把它们列出来
+  并跳过自己 —— `kill-server` 会连带杀掉会话里的所有进程，远超这一步的价值。
 - `--mirror` / `DOT_GITHUB_MIRRORS` 引入的镜像是**第三方信任根**，
   脚本不做校验和或签名验证。默认直连 GitHub，镜像严格需要显式开启；
   `--list` 会按尝试顺序把下载源打出来。
@@ -260,7 +263,8 @@ run-tests.sh     # 本地 / Docker 测试入口
 - 唯一的大流量步骤是字体：nerd-fonts 按字体族发包，zip 上百 MB 没得挑。
   但只解出两个族各四个常规字重 —— `JetBrainsMono Nerd Font Mono`（终端该选的那个）
   和 `JetBrainsMono Nerd Font`（所有文档和字体搜索框里用的名字）—— 共 8 个文件、
-  约 20 MB，而非整包 233 MB。装过之后再跑就直接跳过，而且它在 `final` 阶段 ——
+  约 20 MB，而非整包 233 MB。两个族都在才算装过（旧版本只装了 Mono 的半装状态
+  会自动补齐），再跑就直接跳过；而且它在 `final` 阶段 ——
   GitHub 限速不会让刚生成好的 tmux 配置作废。不想装就 `--set tmux.font=skip`。
   这一步会把 fontconfig 最终认到的族名原样打出来；如果设置界面已经开着，
   需要重开应用才看得到（字体列表只在启动时读一次）。

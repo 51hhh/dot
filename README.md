@@ -46,8 +46,8 @@ Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file th
 
 - **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
 - **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 197 bats tests, and a real install inside four
-  distro containers (Ubuntu 22.04/24.04, Debian 12, Fedora 40). No artifact is
+  `--lint`, shellcheck, shfmt, 211 bats tests, and a real install inside four
+  distro containers (Ubuntu 22.04/24.04, Debian 12, Fedora 44). No artifact is
   uploaded, no branch is written to, no `dist/` is committed.
 - **The download URL is just the file in the repo:**
   `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
@@ -199,7 +199,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 197 bats tests in six layers:
+images. 211 bats tests in six layers:
 
 | File | Covers | Needs |
 | --- | --- | --- |
@@ -208,7 +208,7 @@ images. 197 bats tests in six layers:
 | `tests/conf.bats` | the generated `~/.tmux.conf`, and idempotence | a temp HOME |
 | `tests/cli.bats` | flag parsing, exit codes, `curl \| bash`, lint negatives | nothing |
 | `tests/ask.bats` | interactive navigation, keystrokes injected via `DOT_INPUT_FD` | nothing |
-| `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic and extraction whitelist, package-manager layer, tmux version floor | nothing |
+| `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic and extraction whitelist, package-manager layer, tmux version floor, session-preserving cleanup | nothing |
 
 Only `conf.bats` touches the filesystem, entirely inside `$BATS_TEST_TMPDIR`.
 Interactive tests need no pty — keystrokes are fed through a plain fd:
@@ -267,7 +267,11 @@ copy of the patterns in `plan.bats`.
 - Installing tmux needs `sudo`. It is only invoked where required and always
   through one entry point — `grep dot_sudo TMUX.sh` shows every use.
 - `~/.tmux.conf` is backed up to `~/.tmux.conf.bak.<timestamp>` before being
-  overwritten.
+  overwritten — unless the current file is byte-identical to the newest backup,
+  in which case re-running does not pile up copies of the same thing.
+- Running tmux sessions are never killed. The socket-cleanup step lists them and
+  skips itself instead; `kill-server` would take down everything running inside
+  them, which is far more than that step is worth.
 - Mirrors added via `--mirror` / `DOT_GITHUB_MIRRORS` are a **third-party trust
   root**; the script does no checksum or signature verification. GitHub is
   contacted directly by default and mirrors are strictly opt-in. `--list` prints
@@ -279,8 +283,10 @@ copy of the patterns in `plan.bats`.
   faces of two families are extracted — `JetBrainsMono Nerd Font Mono` (what a
   terminal should be set to) and `JetBrainsMono Nerd Font` (the name every doc and
   font picker uses) — 8 files, ~20 MB on disk instead of 233 MB. It re-runs as a
-  no-op once installed, and it runs in `final`, so a rate-limited GitHub cannot
-  invalidate the tmux config you just got. `--set tmux.font=skip` opts out.
+  no-op once both families are present — a half-installed state left by an older
+  version (Mono only) is topped up rather than mistaken for done. And it runs in
+  `final`, so a rate-limited GitHub cannot invalidate the tmux config you just
+  got. `--set tmux.font=skip` opts out.
   The step prints the exact family names fontconfig ended up with; a picker that
   was already open needs the app restarted, since font lists are read at startup.
 - `Ctrl-C` aborts for real. It restores the cursor and exits 130 rather than

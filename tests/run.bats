@@ -184,10 +184,14 @@ run_fake_plan() {
 # 它一错就是每次重装都白拉一遍整个字体包。
 # fc-list / download_with_fallback / _ensure_font_deps 全部换成假的，不联网。
 
-@test "字体已装时直接跳过，不发起下载" {
+# 这些测试必须自己设 HOME：字体目录是 $HOME/.local/share/fonts/<包名>，
+# 而开发机上那个目录多半真的有字体 —— 不设的话「没装」这一类断言在本机
+# 恒假、在 CI 恒真，等于没测。
+@test "两个族都在时直接跳过，不发起下载" {
+  HOME="$BATS_TEST_TMPDIR/home-both"
   ANS[tmux.font]=jetbrains
   DOWNLOADED=0
-  fc-list() { printf '%s: JetBrainsMono Nerd Font Mono:style=Regular\n' /f/x.ttf; }
+  fc-list() { printf 'JetBrainsMono Nerd Font\nJetBrainsMono Nerd Font Mono\n'; }
   download_with_fallback() { DOWNLOADED=1; }
   local st=0
   step_tmux_font >/dev/null 2>&1 || st=$?
@@ -197,7 +201,44 @@ run_fake_plan() {
   [ "$DOWNLOADED" -eq 0 ]
 }
 
+@test "只装了 Mono 一族（旧版本留下的半装状态）时会补下载" {
+  # 上一版脚本只解 *NerdFontMono-*。判据写成「族名子串命中」的话，
+  # 「JetBrainsMono Nerd Font Mono」这一行就满足了「JetBrainsMono Nerd Font」，
+  # 于是所有已经跑过旧版本的人永远拿不到修好的那一族 —— 修了也送不到。
+  HOME="$BATS_TEST_TMPDIR/home-mono"
+  ANS[tmux.font]=jetbrains
+  DOWNLOADED=0
+  fc-list() { printf 'JetBrainsMono Nerd Font Mono\nDejaVu Sans\n'; }
+  _ensure_font_deps() { return 0; }
+  download_with_fallback() {
+    DOWNLOADED=1
+    return 1
+  }
+  local st=0
+  step_tmux_font >/dev/null 2>&1 || st=$?
+  [ "$DOWNLOADED" -eq 1 ]
+}
+
+@test "目录里两种文件名都在时也算已装（不依赖 fontconfig 的族名）" {
+  # Meslo 的文件名是 MesloLGS*，族名映射各家不同；文件名是我们自己
+  # 用白名单解出来的，最可靠。
+  HOME="$BATS_TEST_TMPDIR/home-dir"
+  local dir="$HOME/.local/share/fonts/JetBrainsMono"
+  mkdir -p "$dir"
+  : > "$dir/JetBrainsMonoNerdFontMono-Regular.ttf"
+  : > "$dir/JetBrainsMonoNerdFont-Regular.ttf"
+  ANS[tmux.font]=jetbrains
+  DOWNLOADED=0
+  fc-list() { printf 'DejaVu Sans\n'; } # fontconfig 一无所知
+  download_with_fallback() { DOWNLOADED=1; }
+  local st=0
+  step_tmux_font >/dev/null 2>&1 || st=$?
+  [ "$st" -eq 0 ]
+  [ "$DOWNLOADED" -eq 0 ]
+}
+
 @test "字体没装时才下载，下载失败则步骤失败" {
+  HOME="$BATS_TEST_TMPDIR/home-none"
   ANS[tmux.font]=jetbrains
   DOWNLOADED=0
   fc-list() { printf 'DejaVu Sans:style=Book\n'; }
@@ -341,6 +382,36 @@ PKG_FILES=(
   [ "$status" -ne 0 ]
 }
 
+@test "四个包管理器都有卸载命令，未知的失败" {
+  dot_sudo() { printf '%s\n' "$*"; }
+  local pm
+  for pm in apt-get dnf pacman zypper; do
+    run pm_remove "$pm" tmux
+    [ "$status" -eq 0 ] || { echo "$pm 没有卸载命令"; return 1; }
+    [[ "$output" == *tmux* ]] || { echo "$pm 没把包名传下去"; return 1; }
+  done
+  run pm_remove brew tmux
+  [ "$status" -ne 0 ]
+}
+
+@test "卸载步骤走包管理器抽象（以前那份 if/elif 副本漏了 zypper）" {
+  HOME="$BATS_TEST_TMPDIR/home-uninstall"
+  mkdir -p "$HOME"
+  detect_pm() { printf zypper; }
+  local rec="$BATS_TEST_TMPDIR/removed"
+  pm_remove() {
+    shift
+    printf '%s\n' "$*" > "$rec"
+  }
+  # 这些桩把这一步关在测试目录里：id 决定 socket 目录（别去动真的 /tmp/tmux-<uid>），
+  # dot_sudo 兜住 /usr/local/bin/tmux 那一支，tmux 兜住 kill-server。
+  id() { printf 99999; }
+  dot_sudo() { :; }
+  tmux() { :; }
+  step_tmux_uninstall >/dev/null 2>&1
+  [ "$(cat "$rec")" = tmux ]
+}
+
 @test "四个包管理器的编译依赖都包含编译器、libevent、ncurses、bison" {
   local pm deps
   for pm in apt-get dnf pacman zypper; do
@@ -352,6 +423,115 @@ PKG_FILES=(
     [[ "$deps" == *gcc* || "$deps" == *build-essential* || "$deps" == *base-devel* ]] \
       || { echo "$pm 缺编译器"; return 1; }
   done
+}
+
+# ── 核心包 / 可选包 ──────────────────────────────────────────────
+#
+# 整组 install 的语义是「一个包名在这个源里不存在，整组都不装」。
+# 把 xclip / wl-clipboard / acpi 混进核心组，等于让一个剪贴板辅助程序
+# 有权让 tmux 装不上 —— 而 install 阶段失败会中止后面全部步骤。
+
+@test "核心包一次装完，可选包分开装" {
+  local rec="$BATS_TEST_TMPDIR/pm-calls"
+  detect_pm() { printf apt-get; }
+  pm_refresh() { return 0; }
+  pm_install() {
+    shift
+    printf '%s\n' "$*" >> "$rec"
+  }
+  tmux_version() { printf 3.4; }
+  step_tmux_apt >/dev/null 2>&1
+  local core
+  core="$(head -1 "$rec")"
+  [[ "$core" == *tmux* ]]
+  [[ "$core" == *fontconfig* ]]
+  # 拆开的证据：可选包不在核心那一行里，而是各自一行
+  [[ "$core" != *xclip* ]]
+  grep -qx xclip "$rec"
+  grep -qx wl-clipboard "$rec"
+  grep -qx acpi "$rec"
+}
+
+@test "可选包装不上时步骤仍然成功，并说清少了哪些" {
+  detect_pm() { printf apt-get; }
+  pm_refresh() { return 0; }
+  pm_install() {
+    shift
+    case "$*" in
+      xclip | wl-clipboard | acpi) return 1 ;;
+    esac
+    return 0
+  }
+  tmux_version() { printf 3.4; }
+  run step_tmux_apt
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"可选包未装上"* ]]
+  [[ "$output" == *xclip* ]]
+  [[ "$output" == *wl-clipboard* ]]
+  [[ "$output" == *acpi* ]]
+}
+
+@test "核心包装不上时步骤失败（tmux 没装上不能算成功）" {
+  detect_pm() { printf apt-get; }
+  pm_refresh() { return 0; }
+  pm_install() { return 1; }
+  local st=0
+  step_tmux_apt >/dev/null 2>&1 || st=$?
+  [ "$st" -eq 1 ]
+}
+
+# ── socket 清理不能杀掉正在跑的会话 ──────────────────────────────
+#
+# kill-server 会连带杀掉会话里的所有进程（编译、下载、ssh）。
+# $TMUX 只挡「自己在 tmux 里跑」，挡不住 detached 的会话 ——
+# 于是从普通终端跑一次安装，能把后台跑着的活儿全带走。
+
+@test "有会话在跑时不清理，也不杀 server" {
+  # TMUX 必须显式清空：开发者常常就在 tmux 里跑测试，那时会走
+  # 「在 tmux 内」那一支，这个测试就在本机恒过、在 CI 才真的测到东西。
+  TMUX=""
+  KILLED=0
+  id() { printf 99999; }
+  tmux() {
+    case "$1" in
+      list-sessions) printf 'work\nbuild\n' ;;
+      kill-server) KILLED=1 ;;
+    esac
+  }
+  local out="$BATS_TEST_TMPDIR/cleanup-out"
+  local st=0
+  step_tmux_cleanup > "$out" 2>&1 || st=$?
+  [ "$st" -eq 0 ]
+  [ "$KILLED" -eq 0 ]
+  grep -q "正在运行的 tmux 会话" "$out"
+  grep -q work "$out"
+}
+
+@test "server 在跑但没有会话时才杀（装到一半留下的空 server）" {
+  TMUX=""
+  KILLED=0
+  id() { printf 99999; }
+  pgrep() { return 0; }
+  tmux() {
+    case "$1" in
+      list-sessions) return 1 ;;
+      kill-server) KILLED=1 ;;
+    esac
+  }
+  step_tmux_cleanup >/dev/null 2>&1
+  [ "$KILLED" -eq 1 ]
+}
+
+@test "自己就在 tmux 里跑时一步都不动" {
+  TMUX=/tmp/tmux-99999/default,1,0
+  KILLED=0
+  tmux() {
+    case "$1" in
+      kill-server) KILLED=1 ;;
+    esac
+  }
+  step_tmux_cleanup >/dev/null 2>&1
+  [ "$KILLED" -eq 0 ]
 }
 
 # ── tmux 版本下限 ────────────────────────────────────────────────
