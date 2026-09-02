@@ -19,8 +19,14 @@
 ## 快速开始
 
 ```bash
+# 从 TUI 选择一个或多个现有安装脚本
+bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/dot.sh)
+
 # 交互式
 bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh)
+
+# 直接配置 Zsh
+bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/ZSH.sh)
 
 # 经典管道写法 —— 同样可交互，因为按键读自 /dev/tty 而不是 stdin
 curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh | bash
@@ -34,6 +40,7 @@ less TMUX.sh && bash TMUX.sh
 
 ```bash
 bash TMUX.sh --preset recommended --yes
+bash ZSH.sh --preset recommended --yes
 ```
 
 > **要求 bash ≥ 4.2。** 脚本大量使用关联数组和 `declare -g`（后者是 4.2 引入的），
@@ -41,14 +48,14 @@ bash TMUX.sh --preset recommended --yes
 
 ## 没有构建产物，这是刻意的
 
-`TMUX.sh` **本身就是产物** —— 你读到的文件就是跑起来的文件。
+`TMUX.sh`、`ZSH.sh`、`dot.sh` **本身就是产物** —— 读到的文件就是运行的文件。
 
-- **本地不需要生成任何东西。** `git clone && bash TMUX.sh`，没有第二步。
-- **CI 不产出脚本。** 它只做验证：`bash -n`、脚本自带的 `--lint`、shellcheck、
-  shfmt、212 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
+- **本地不需要生成任何东西。** 克隆仓库，然后运行需要的安装脚本即可。
+- **CI 不产出脚本。** 它只做验证：`bash -n`、安装脚本自带的 `--lint`、shellcheck、
+  shfmt、240 个 bats 测试，以及在四个发行版容器（Ubuntu 22.04/24.04、Debian 12、
   Fedora 44）里真实安装一遍。不上传 artifact、不写回分支、不提交 `dist/`。
-- **下载链接就是仓库里的那个文件：**
-  `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
+- **下载链接就是仓库里的文件：** `TMUX.sh`、`ZSH.sh` 或 `dot.sh`，统一位于
+  `https://raw.githubusercontent.com/51hhh/dot/master/`。
 
 上一版架构确实有构建（TypeScript 把 YAML 配置和约 80 个模板片段拼成 `dist/dot.sh`，
 再发布到一个网站）。那层间接正是它最痛的来源：下载到的东西没有人读过、
@@ -63,6 +70,11 @@ zypper 自动识别 —— 或源码编译，或跳过）、前缀键、
 tmuxifier）、5 项基础配置（鼠标、Vi 复制模式、索引从 1 开始、直觉化分割键、
 `prefix+r` 重载）、Nerd Font（自动下载安装 —— 没有它状态栏图标就是一排方框），
 以及完整卸载。选「推荐配置」一个回车即展开为 21 个步骤。
+
+`ZSH.sh` 完全独立地安装 zsh、Oh My Zsh、Powerlevel10k、
+zsh-autosuggestions、zsh-syntax-highlighting、`git` / `z` / `extract` 插件，
+以及四款 MesloLGS Nerd Font。它会备份 `~/.zshrc`，可明确选择是否修改登录 shell，
+并支持幂等重跑。`dot.sh` 只是薄 TUI 启动器；两个安装脚本都不依赖它或彼此。
 
 ## 架构
 
@@ -188,7 +200,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 本机有 `shellcheck` / `shfmt` / `bats` 就直接用，没有则回落到 Docker 镜像。
-212 个 bats 测试分六层：
+240 个 bats 测试分布在八个文件：
 
 | 文件 | 测什么 | 需要 |
 | --- | --- | --- |
@@ -198,8 +210,10 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 | `tests/cli.bats` | 参数解析、退出码、`curl \| bash`、lint 反例 | 无 |
 | `tests/ask.bats` | 交互导航，按键经 `DOT_INPUT_FD` 注入 | 无 |
 | `tests/run.bats` | 各阶段的失败策略、镜像回落顺序、字体跳过判断与解压白名单、包管理器抽象、tmux 版本下限、清理步骤不杀会话 | 无 |
+| `tests/zsh.bats` | Zsh 计划、克隆与字体幂等、备份、关键阶段失败策略 | 临时 HOME |
+| `tests/dot.bats` | 注册表、选择隔离、快照 URL、下载校验与结果汇总 | 无 |
 
-只有 `conf.bats` 碰文件系统，且全在 `$BATS_TEST_TMPDIR` 里。
+涉及文件系统的测试全部只写 `$BATS_TEST_TMPDIR`。
 交互测试不需要 pty —— 按键从一个普通 fd 喂进去：
 
 ```bash
@@ -226,7 +240,9 @@ TMUX.sh          # 全部实现，按 §1..§11 分节
 ├─ §9  steps     # 每个步骤一个 step_* 函数
 ├─ §10 lint      # 声明自检
 └─ §11 cli       # 参数解析与 main
-tests/*.bats     # 六层测试
+ZSH.sh           # 独立 Zsh / Oh My Zsh 安装脚本
+dot.sh           # 薄 TUI 下载与调度器
+tests/*.bats     # 安装脚本与调度器行为测试
 run-tests.sh     # 本地 / Docker 测试入口
 ```
 
@@ -234,18 +250,17 @@ run-tests.sh     # 本地 / Docker 测试入口
 因为 `curl | bash` 是主要分发方式 —— 多文件就得先打包再合并，
 而那正是上一版架构复杂度的来源。
 
-## 加一个新配方
+## 多脚本架构
 
-以 zsh 为例，只需要动两处：
+`TMUX.sh` 与 `ZSH.sh` 都是自包含、可幂等重跑的独立安装脚本。未来增加 SSH 等
+环境时继续遵守同一规则：不把它做成另一个安装器里的配方，脚本之间也不互相依赖。
 
-1. **§8 declare** —— `ask` 出问题、`step` 出步骤、`preset` 出推荐组合。
-2. **§9 steps** —— 每个步骤写一个 `step_<id>` 函数。
+`dot.sh` 提供 TUI，让用户选择一个或多个现有脚本；它只解析一次最新 `master`，
+下载并检查后依次运行。它是薄调度器，不做依赖管理。快速配置代理之类的内置小工具
+仍留待后续补充。
 
-然后 `--lint` 会告诉你：`when` 有没有引用未声明的 key、`step` 有没有缺函数体、
-阶段名有没有写错。计划层的测试基本照抄 `plan.bats` 的模式。
-
-> 旧架构里的 zsh（23 个片段）与 ssh（25 个片段）脚本保存在提交 `16d6670`，
-> 移植时可以直接取用：`git show 16d6670:templates/zsh/zshrc-recommended.sh`
+完整边界、最新主分支策略、代理的进程语义和上线前测试要求，记录在
+[ARCHITECTURE.zh-CN.md](ARCHITECTURE.zh-CN.md)（[English](ARCHITECTURE.md)）。
 
 ## 安全说明
 
@@ -270,3 +285,9 @@ run-tests.sh     # 本地 / Docker 测试入口
   需要重开应用才看得到（字体列表只在启动时读一次）。
 - `Ctrl-C` 是真的停：恢复光标并以 130 退出，不会接着跑下一个步骤。
 - `--dry-run` 保证零副作用。不确定时先跑它。
+- `ZSH.sh` 遵循 Oh My Zsh 的上游目录结构，并安装 Powerlevel10k 官方推荐的四款
+  MesloLGS NF。每个克隆结果都检查实际入口文件，官方要求最后加载的
+  `zsh-syntax-highlighting` 也固定排在插件列表末尾。
+- `ZSH.sh` 克隆的组件会带所有权标记。卸载只删除带标记的组件，保留安装前已有的
+  `~/.oh-my-zsh`、用户生成的 `~/.p10k.zsh` 和 `.zshrc` 备份。生成配置会在文件
+  存在时加载 `~/.p10k.zsh`，重跑不会切断 P10k 向导结果。

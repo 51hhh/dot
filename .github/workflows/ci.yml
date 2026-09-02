@@ -82,6 +82,33 @@ jobs:
           grep -q "@plugin 'tmux-plugins/tpm'" "$HOME/.tmux.conf"
           tmux -V
 
+      # 每个发行版都真实走一次 ZSH.sh 自己的包管理器层。--only 保证这里只验证
+      # 系统包，不让四个容器重复克隆主题和插件。
+      - name: 通过包管理器安装并校验 Zsh
+        shell: bash
+        run: |
+          bash ZSH.sh --preset recommended --only zsh.package --yes
+          zsh --version
+
+      # ZSH.sh 是独立安装器：这里不借用 TMUX.sh 的函数或状态。
+      # 包管理器路径由 tmux job 已覆盖；本步聚焦 Oh My Zsh、主题、插件和配置产物。
+      - name: 非交互安装 Zsh 推荐配置
+        if: matrix.image == 'ubuntu:24.04'
+        shell: bash
+        run: |
+          bash ZSH.sh --preset recommended --set zsh.install=skip \
+            --set zsh.font=skip --set zsh.default_shell=no --yes
+          test -f "$HOME/.zshrc"
+          test -d "$HOME/.oh-my-zsh/.git"
+          test -d "$HOME/.oh-my-zsh/custom/themes/powerlevel10k/.git"
+          test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions/.git"
+          test -d "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting/.git"
+          grep -q 'ZSH_THEME="powerlevel10k/powerlevel10k"' "$HOME/.zshrc"
+          grep -q 'plugins=(git zsh-autosuggestions z extract zsh-syntax-highlighting)' "$HOME/.zshrc"
+          grep -q 'source "$HOME/.p10k.zsh"' "$HOME/.zshrc"
+          out=$(bash dot.sh --list)
+          grep -q ZSH.sh <<< "$out"
+
       # 字体是唯一会往 ~/.local/share/fonts 写东西的步骤，只有真跑一次
       # 才能发现「zip 换了目录结构」这类问题。一个容器足够。
       - name: 安装并校验 Nerd Font（只在一个镜像上跑）

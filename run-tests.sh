@@ -35,7 +35,7 @@ docker_ok() { have docker && docker info >/dev/null 2>&1; }
 
 # 自己也一起查：shfmt 两个文件都管，shellcheck 只管一个的话，
 # 这个脚本就成了仓库里唯一没人看的 bash 文件。
-SH_FILES=(TMUX.sh run-tests.sh)
+SH_FILES=(TMUX.sh ZSH.sh dot.sh run-tests.sh)
 
 run_shellcheck() {
   say "shellcheck（-S style，最严档）"
@@ -71,8 +71,9 @@ run_shfmt() {
 
 run_syntax() {
   say "bash -n 与内置 --lint"
-  check "bash -n" bash -n TMUX.sh
-  check "--lint" bash TMUX.sh --lint
+  check "bash -n" bash -n TMUX.sh ZSH.sh dot.sh
+  check "TMUX.sh --lint" bash TMUX.sh --lint
+  check "ZSH.sh --lint" bash ZSH.sh --lint
 }
 
 run_bats() {

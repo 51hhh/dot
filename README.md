@@ -19,8 +19,14 @@
 ## Quick start
 
 ```bash
+# Select one or more available installers
+bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/dot.sh)
+
 # Interactive
 bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh)
+
+# Zsh directly
+bash <(curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/ZSH.sh)
 
 # Classic pipe — also works, input is read from /dev/tty, not stdin
 curl -fsSL https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh | bash
@@ -34,6 +40,7 @@ Non-interactive — CI, provisioning, reinstalls:
 
 ```bash
 bash TMUX.sh --preset recommended --yes
+bash ZSH.sh --preset recommended --yes
 ```
 
 > **Requires bash ≥ 4.2.** The script leans on associative arrays and `declare -g`
@@ -42,15 +49,16 @@ bash TMUX.sh --preset recommended --yes
 
 ## There is no build step
 
-Deliberately. `TMUX.sh` **is** the artifact — the file you read is the file that runs.
+Deliberately. `TMUX.sh`, `ZSH.sh`, and `dot.sh` **are** the artifacts — the files
+you read are the files that run.
 
-- **Nothing to generate locally.** `git clone && bash TMUX.sh` is the whole story.
-- **CI does not produce a script.** It only verifies: `bash -n`, the script's own
-  `--lint`, shellcheck, shfmt, 212 bats tests, and a real install inside four
+- **Nothing to generate locally.** Clone, then run the installer you want.
+- **CI does not produce scripts.** It only verifies: `bash -n`, the installers'
+  `--lint`, shellcheck, shfmt, 240 bats tests, and real installs inside four
   distro containers (Ubuntu 22.04/24.04, Debian 12, Fedora 44). No artifact is
   uploaded, no branch is written to, no `dist/` is committed.
-- **The download URL is just the file in the repo:**
-  `https://raw.githubusercontent.com/51hhh/dot/master/TMUX.sh`
+- **Each download URL is just a file in the repo:** `TMUX.sh`, `ZSH.sh`, or
+  `dot.sh` under `https://raw.githubusercontent.com/51hhh/dot/master/`.
 
 The previous architecture did have a build (TypeScript → a generated `dist/dot.sh`,
 assembled from YAML configs plus ~80 template fragments, published to a web host).
@@ -69,6 +77,12 @@ dnf, pacman or zypper — build from source, or skip), prefix key, 8 common plug
 `prefix+r` reload), a Nerd Font (downloaded and installed for you — without one
 the status bar icons are just boxes), and a full uninstall. Picking
 **recommended** expands to a 21-step plan in one keystroke.
+
+`ZSH.sh` independently installs zsh, Oh My Zsh, Powerlevel10k,
+zsh-autosuggestions, zsh-syntax-highlighting, the `git` / `z` / `extract`
+plugins, and four MesloLGS Nerd Font faces. It backs up `~/.zshrc`, can change the
+login shell explicitly, and is safe to rerun. `dot.sh` is the thin TUI launcher;
+neither installer needs it or the other installer.
 
 ## Architecture
 
@@ -199,7 +213,7 @@ bash TMUX.sh --answers bug.txt --only tmux.status.catppuccin
 ```
 
 Uses local `shellcheck` / `shfmt` / `bats` when present, else falls back to Docker
-images. 212 bats tests in six layers:
+images. 240 bats tests in eight files:
 
 | File | Covers | Needs |
 | --- | --- | --- |
@@ -209,8 +223,10 @@ images. 212 bats tests in six layers:
 | `tests/cli.bats` | flag parsing, exit codes, `curl \| bash`, lint negatives | nothing |
 | `tests/ask.bats` | interactive navigation, keystrokes injected via `DOT_INPUT_FD` | nothing |
 | `tests/run.bats` | failure policy per phase, mirror fallback order, font skip logic and extraction whitelist, package-manager layer, tmux version floor, session-preserving cleanup | nothing |
+| `tests/zsh.bats` | Zsh plan, cloning and font idempotence, backups, critical failure policy | a temp HOME |
+| `tests/dot.bats` | registry, selection isolation, snapshot URLs, validation and result summary | nothing |
 
-Only `conf.bats` touches the filesystem, entirely inside `$BATS_TEST_TMPDIR`.
+Filesystem tests write only inside `$BATS_TEST_TMPDIR`.
 Interactive tests need no pty — keystrokes are fed through a plain fd:
 
 ```bash
@@ -237,7 +253,9 @@ TMUX.sh          # the whole implementation, sectioned §1..§11
 ├─ §9  steps     # one step_* function per step
 ├─ §10 lint      # declaration self-check
 └─ §11 cli       # argument parsing and main
-tests/*.bats     # the six layers
+ZSH.sh           # standalone Zsh / Oh My Zsh installer
+dot.sh           # thin TUI downloader and dispatcher
+tests/*.bats     # installer and dispatcher behaviour
 run-tests.sh     # local / Docker test entry point
 ```
 
@@ -246,21 +264,19 @@ because `curl | bash` is the primary distribution channel — multiple files wou
 need packaging and concatenation, which is precisely where the previous
 architecture's complexity came from.
 
-## Adding a recipe
+## Multi-script architecture
 
-For zsh, say, you touch two places:
+`TMUX.sh` and `ZSH.sh` are standalone, self-contained, idempotent installers.
+Future environments such as SSH will follow the same rule: they are not recipes
+inside another installer and never depend on one another.
 
-1. **§8 declare** — `ask` for the questions, `step` for the work, `preset` for a
-   recommended bundle.
-2. **§9 steps** — one `step_<id>` function per step.
+`dot.sh` provides a TUI for selecting one or more available scripts, resolves the
+latest `master` once, validates the downloads, and runs them sequentially. It is
+a thin launcher, not a dependency manager. Tiny integrated utilities such as
+quick proxy setup remain planned.
 
-Then `--lint` tells you about `when` clauses referencing undeclared keys, steps
-missing a function body, and illegal phase names. Plan-layer tests are mostly a
-copy of the patterns in `plan.bats`.
-
-> The old architecture's zsh (23 fragments) and ssh (25 fragments) shell snippets
-> are preserved in commit `16d6670` and can be lifted directly:
-> `git show 16d6670:templates/zsh/zshrc-recommended.sh`
+The boundaries, latest-branch policy, proxy process semantics, and required tests
+are recorded in [ARCHITECTURE.md](ARCHITECTURE.md) ([简体中文](ARCHITECTURE.zh-CN.md)).
 
 ## Security notes
 
@@ -292,3 +308,10 @@ copy of the patterns in `plan.bats`.
 - `Ctrl-C` aborts for real. It restores the cursor and exits 130 rather than
   falling through to the next step.
 - `--dry-run` is guaranteed side-effect free. When unsure, run that first.
+- `ZSH.sh` follows the upstream Oh My Zsh layout and Powerlevel10k's four
+  officially recommended MesloLGS NF faces. It validates each cloned component's
+  entry file, and keeps `zsh-syntax-highlighting` last as required upstream.
+- Components cloned by `ZSH.sh` receive an ownership marker. Uninstall removes
+  only marked components, preserves a pre-existing `~/.oh-my-zsh`, the user's
+  `~/.p10k.zsh`, and `.zshrc` backups. The generated config loads `~/.p10k.zsh`
+  when present, so rerunning does not disconnect the P10k wizard's result.
