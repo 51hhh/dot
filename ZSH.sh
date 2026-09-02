@@ -416,7 +416,10 @@ step_zsh_font() {
     return 1
   }
   rmdir "$stage"
-  command -v fc-cache >/dev/null 2>&1 && fc-cache -f "$dir" >/dev/null 2>&1 || true
+  if command -v fc-cache >/dev/null 2>&1; then
+    # 字体已经落盘，缓存刷新失败不该把整个安装判成失败；重启应用时仍会重新扫描。
+    fc-cache -f "$dir" >/dev/null 2>&1 || log_warn "fontconfig 缓存刷新失败，请稍后执行 fc-cache -f"
+  fi
   log_ok "已安装 $installed 款 MesloLGS NF：$dir"
 }
 
